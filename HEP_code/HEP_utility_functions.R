@@ -1,8 +1,16 @@
 
 
+# a basic starting workflow for HEP data looks like this
 
-library(tidyverse)
+#hep <- hep_from_access() %>% 
+#  clean_hep() %>% 
+#  add_site_names() %>% 
+#  cut_never_nested() %>% 
+#  cut_leading_0s() %>% 
+#  trim_hep_columns()
 
+
+# data reading ----
 
 hep_from_access <- function(zdata.source = "HEP data", ztable = "tbl_HEPDATA") {
 library(RODBC)
@@ -141,6 +149,31 @@ calc_mean_brood_size <- function(hep) {
     full_join(mean_brd_size) %>% 
     ungroup()
 }
+
+
+# function to calculate mean and sd for colony-level productivity parameters: brood size, proportion of nests successfull, colony productivity
+calc.repro=function(df) {
+##-- first peel off brood size columns to calculate average brood size and se
+brds <- select(df, CODE, YEAR, SPECIES, BRD1, BRD2, BRD3, BRD4, BRD5, BRD6)
+brds.long=melt(brds, id.vars = c("CODE", "YEAR", "SPECIES"), variable_name="br.size")
+brds.long$br.size <- as.numeric(substr(brds.long$br.size, 4, 4))
+brds.longer <- brds.long[rep(row.names(brds.long), brds.long$value), 1:4]
+brds.longer1=filter(brds.longer, br.size>0)
+brds.prod <- brds.longer %>%
+		group_by(CODE, YEAR, SPECIES) %>%
+		summarize(mean.brs=mean(br.size),
+				  se.brs=var(br.size)/sqrt(length(br.size)))
+##-- then add mean and se brood size back to original df				  
+df1=merge(df, brds.prod, by.x=c("CODE", "YEAR", "SPECIES"), by.y=c("CODE", "YEAR", "SPECIES"), all.x=T)
+##-- and finally calculate proportion and se of focal nests that were successful, and colony productivity (average number of chicks per nest attempt)
+df1$prop.successful=1-(df1$FOCFAILURE/df1$FOCALNESTS)
+df1$se.successfull=sqrt((df1$prop.successful*(1-df1$prop.successful))/df1$FOCALNESTS)
+df1$prod=df1$prop.successful*df1$mean.brs
+return(df1)
+}
+#hep=calc.repro(hep)
+	
+
 
 
 
