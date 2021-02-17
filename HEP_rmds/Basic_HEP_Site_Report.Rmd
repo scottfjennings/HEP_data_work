@@ -1,0 +1,272 @@
+---
+title: ""
+author: ""
+output: word_document
+---
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+## CAN RUN THE CODE IN THIS CHUNK AND LOOK AT hep.species TO SEE WHAT CHANGES MUST BE MADE FURTHER DOWN
+## WILL NEED TO ADD SPECIES SPECIFIC CODE FOR EACH SPECIES AT THE COLONY IN THE FIRST TEXT PARAGRAPH (~LINE155)
+## AND ALSO WILL NEED TO ADD A NEW SPECIES BLOCK (AND RENAME sp) FOR EACH SPECIES
+
+## FILL IN COLONY AND YEAR SPECIFIC INFO HERE
+year <- "2016"
+site <- 		"GoldHill"   ## this is the HEP_screening file name
+par.code <- "29"  ## this is the prefix for the HEP site CODE
+## CAN GET BOTH OF THESE FROM C:/Users/scott.jennings/Dropbox/ACR/HEP_screening/sub_sites.csv
+
+
+library(xlsx)
+library(dplyr)
+library(reshape)
+library(ggplot2)
+library(lubridate)
+
+
+## read in data
+
+
+newer.hep= read.csv("projects/HEP/newer_hep.csv")
+# subset to site - parent.code is easiest way to do this
+hep.site.a <- droplevels(subset(newer.hep, parent.code==par.code))
+hep.site <- droplevels(filter(hep.site.a, PEAKACTVNSTS>0))
+# data management
+hep.site$SPECIES=as.factor(hep.site$SPECIES)
+hep.site[c("FOCALNESTS", "FOCFAILURE")][is.na(hep.site[c("FOCALNESTS", "FOCFAILURE")])] <- 0
+
+#check to see what species have ever nested in the colony
+#
+hep.species <- unique(hep.site$SPECIES) 
+#
+hep.species
+
+#check to see what species nested in the colony during the year in question
+#hep.site.cur.year <- droplevels(filter(hep.site, YEAR==year)) 
+#hep.species.cur.year <- unique(hep.site.cur.year$SPECIES) 
+#hep.species.cur.year
+
+#check to see what species have ever nested in the colony
+
+
+```
+
+
+
+```{r echo=FALSE}
+## defining some functions and importing and creating a few more data tables
+
+#function to return Common name when 4 letter code is input
+spp.namer=function(sp)	{	
+aou <- read.csv("C:/Users/scott.jennings/Dropbox/ACR/Projects/birds/AOU_list.csv")
+aou.filt <- droplevels(filter(aou, Alpha.Code==sp))
+return(aou.filt$Common.Name)
+}
+
+#function to return scientific name when 4 letter code is input
+sci.namer=function(sp)	{	
+aou <- read.csv("C:/Users/scott.jennings/Dropbox/ACR/Projects/birds/AOU_list.csv")
+aou.filt <- droplevels(filter(aou, Alpha.Code==sp))
+return(aou.filt$Scientific.Name)
+}
+
+
+		
+filename <- paste("C:/Users/scott.jennings/Dropbox/ACR/HEP_screening/scoring/", paste(year, site, sep="/"), "_scoring.xlsx", sep="")
+
+# get df with peak active date for each species
+foc <- read.xlsx(filename, sheetName="peak_active", as.data.frame=TRUE) 
+#
+
+#  get df with first dates with egg, chicks for each species
+num_stage <- read.xlsx(filename, sheetName="nest_num_stage", as.data.frame=TRUE)
+num_stage_long <- melt(num_stage, id.vars = c("Species", "Stage"))
+names(num_stage_long)[names(num_stage_long)=="variable"] <- "mo.da"
+names(num_stage_long)[names(num_stage_long)=="value"] <- "num.nests"
+num_stage_long$num.nests <- as.numeric(as.character(num_stage_long$num.nests))
+num_stage_long=num_stage_long[!(is.na(num_stage_long$num.nests)),]
+num_stage_long$mo.da <- substr(num_stage_long$mo.da, 2, 6)
+num_stage_long$date <- mdy(paste(num_stage_long$mo.da, year, sep="."))
+#
+
+# generate official name for HEP site when the HEP screening file name is input
+site.namer <- function(site.name)  {
+  sites <- read.csv("C:/Users/scott.jennings/Dropbox/ACR/HEP_screening/sub_sites.csv")
+  sites2 <- droplevels(filter(sites, site_name==site.name))
+  return(sites2$SITE)
+ }
+site.name <- site.namer(site) 
+
+# extract the first year there is data for each species 
+min.yrs <- group_by(hep.site, SPECIES) %>% summarize(min.yr = min(YEAR)) 
+# extract the last year there is data for each species 
+max.yrs <- group_by(hep.site, SPECIES) %>% summarize(max.yr = max(YEAR)) 
+
+
+col.surv.prev.yrs= hep.site %>%
+		filter(YEAR<year) %>%
+		group_by(SPECIES) %>%
+		summarize(
+		FOCAL.sum=sum(FOCALNESTS),
+		FAILURE.sum=sum(FOCFAILURE),
+		colony.perc.successful=100*(1-(FAILURE.sum/FOCAL.sum)),
+		colony.se.perc.successfull=(sqrt((colony.perc.successful*(100-colony.perc.successful))/FOCAL.sum)))
+
+col.surv.cur.yr= hep.site %>%
+		filter(YEAR==year) %>%
+		group_by(SPECIES) %>%
+		summarize(
+		colony.perc.successful=100*(1-(FOCFAILURE/FOCALNESTS)),
+		colony.se.perc.successfull=(sqrt((colony.perc.successful*(100-colony.perc.successful))/FOCALNESTS)))
+
+				
+# calculate overall brood size and se for each species, lumping across all years prior to the year specificed in filter()
+colony.brds = select(hep.site, CODE, YEAR, SPECIES, BRD1, BRD2, BRD3, BRD4, BRD5, BRD6) 
+colony.brds.long=melt(colony.brds, id.vars = c("CODE", "YEAR", "SPECIES"), variable_name="br.size")
+colony.brds.long$br.size <- as.numeric(substr(colony.brds.long$br.size, 4, 4))	# extract just the number from old column names (e.g. BRD2 -> 2)
+colony.brds.longer <- colony.brds.long[rep(row.names(colony.brds.long), colony.brds.long$value), 1:4]	# make long again so there's a row for each nest of each brood size
+colony.brds.longer1=filter(colony.brds.longer, br.size>0)
+colony.brds.prod.prev.yrs <- colony.brds.longer %>%
+		filter(YEAR<year) %>%
+		group_by(SPECIES) %>%
+		summarize(mean.brs=mean(br.size),
+				  se.brs=var(br.size)/sqrt(length(br.size)))				
+
+
+
+colony.brds.prod.cur.yr <- colony.brds.longer %>%
+		filter(YEAR==year) %>%
+		group_by(SPECIES) %>%
+		summarize(mean.brs=mean(br.size),
+				  se.brs=var(br.size)/sqrt(length(br.size)))				
+
+
+
+
+```
+
+HERON AND EGRET MONITORING RESULTS AT `r toupper(site.name)`: `r year` NESTING SEASON 
+
+
+Scott Jennings
+
+Cypress Grove Research Center, Audubon Canyon Ranch
+
+P. O. Box 808, Marshall, CA 94940
+
+scott.jennings@egret.org
+
+
+
+
+ACR Technical Report FILL HERE
+
+? October 2016, Audubon Canyon Ranch
+
+Cypress Grove Research Center
+
+P. O. Box 808, Marshall, CA 94940
+
+HERON AND EGRET MONITORING RESULTS AT `r toupper(site.name)`: `r year` NESTING SEASON 
+
+Audubon Canyon Ranch (ACR) has been monitoring the number and productivity of nesting herons and egrets at the `r site.name` colony site since `r min(hep.site$YEAR)` as part of ACR's ongoing, regional Heron and Egret Project.  `r spp.namer("GREG")` (*`r sci.namer("GREG")`*), 
+`r spp.namer("SNEG")` (*`r sci.namer("SNEG")`*) and 
+`r spp.namer("BCNH")` (*`r sci.namer("BCNH")`*)
+have nested at this colony since 
+`r filter(min.yrs, SPECIES=="GREG") %>% select(min.yr)`,
+`r filter(min.yrs, SPECIES=="SNEG") %>% select(min.yr)` and
+`r filter(min.yrs, SPECIES=="BCNH") %>% select(min.yr)`, respectively. FILL HERE - ANY ADDITIONAL SPECIES NEST HERE PREVIOUS YEARS? The colony is located FILL HERE County. FILL HERE - ANY ADDITIONAL COLONY LOCATION DETAILS - GET FROM ATLAS. Most nests are in FILL HERE trees.
+
+
+```{r echo=FALSE}
+
+
+vis=read.xlsx(filename, sheetName="visits", as.data.frame=TRUE)
+datepath <- paste("C:/Users/scott.jennings/Dropbox/ACR/HEP_screening/field_data/", paste(year, site, sep="/"), "_visits.csv", sep="")
+dates=read.csv(datepath)
+dates$Date <- mdy(dates$Date)
+```
+
+
+
+
+At the `r site.name` colony, the data collection was accomplished in `r max(vis$days)` visits between `r day(min(dates$Date))` `r month(min(dates$Date), label=TRUE)` and `r day(max(dates$Date))` `r month(max(dates$Date), label=TRUE)`, with a total of `r max(vis$hours)` hours observing the colony. On each visit, observers counted the total number of active nests, and also counted the number of adults and chicks and estimated nest stage for a subset of nests which were followed individually through the season (focal nests). At the coarsest level, nest stage was evaluated as whether or not chicks were being continuously-guarded by at least 1 parent. Chick mortality is relatively low once the nest is in the unguarded stage (FILL HERE WITH INFO FOR APPROPRIATE SPECIES- COPY FROM ...ACR/Projects/HEP/HEP min fledge.txt), and brood size at this stage is a good estimate of the number of chicks that survive to fledge. Here we report 3 metrics to represent the productivity of FILL HERE WITH INFO FOR APPROPRIATE SPECIES at this colony:
+
+1.	Peak number of active nests observed
+
+2.	Percent nest success- calculated as the percent of focal nests that survived to the minimum fledging age of FILL HERE WITH INFO FOR APPROPRIATE SPECIES- COPY FROM ...ACR/Projects/HEP/HEP min fledge.txt.
+
+3.	Brood size of stage 4 nests- nests were considered stage 4 if they were consistently left unguarded by adults.
+
+To provide context for current colony status, we compare values for these three metrics from this year to their average values collected across the span of our monitoring effort. We report means ? standard errors.
+
+```{r echo=FALSE}
+# function to plot histogram of peak active nests in each year, with mean value
+plot.hep.report=function(df, sp)	{	
+
+sp.name <- spp.namer(sp)	
+				
+ggplot(data=subset(df, SPECIES==sp), aes(x=YEAR, y=PEAKACTVNSTS))+
+		#geom_point(size=5)+
+		geom_bar(stat="identity", alpha=.5, width=.25)+
+		ggtitle(sp.name)+   
+		geom_hline(aes(yintercept=mean(PEAKACTVNSTS, na.rm=T)), color="blue", linetype="dashed", size=1.5)+
+		ylab("Colony size")+
+		xlab("")+
+		scale_x_continuous(breaks=seq(min(df$YEAR), max(df$YEAR), 1))+ 
+		theme_bw()+
+				theme(plot.background = element_blank(),
+					  panel.grid.minor = element_blank(),
+					  panel.grid.major.x=element_blank(),
+					  axis.text.x = element_text(angle = 45, hjust = 1))	
+				
+}				
+
+```
+
+
+
+[//]: # "Start species block"
+
+```{r echo=FALSE}
+sp="GREG"  ## FILL SPECIES CODE HERE - also change figure number in paragraph and legend
+
+com.name = spp.namer(sp)
+
+
+foo <- filter(foc, Species==sp)
+foo$peak_active_date <- ymd(foo$peak_active_date)
+
+footoo <- filter(num_stage_long, Species==sp)
+inc <- filter(footoo, Stage==1) 
+br <- filter(footoo, Stage>1) 
+
+dates.sp <- filter(dates, Species==sp)
+
+hep.sp <- filter(hep.site, SPECIES==sp)
+
+#nest survival
+surv.sp.cur.yr <- filter(col.surv.cur.yr, SPECIES==sp)
+surv.sp.prev.yrs <- filter(col.surv.prev.yrs, SPECIES==sp)
+
+#brood size
+prod.sp.cur.yr <- filter(colony.brds.prod.cur.yr, SPECIES==sp)
+prod.sp.prev.yrs <- filter(colony.brds.prod.prev.yrs, SPECIES==sp)
+
+```
+
+
+`r com.name`
+
+The peak number of `r com.name` nests in `r year` was `r foo$num_active` (observed `r day(foo$peak_active_date)` `r month(foo$peak_active_date, label=TRUE)`), which is FILL HERE the long term average colony size but is FILL HERE than recent years (Figure 1). `r com.name`s were first observed in the colony on `r day(min(dates.sp$Date))` `r month(min(dates.sp$Date), label=TRUE)` and first appeared to be incubating on `r day(min(inc$date))` `r month(min(inc$date), label=TRUE)`. Chicks were first observed on `r day(min(br$date))` `r month(min(br$date), label=TRUE)`. We followed `r filter(hep.sp, YEAR==year) %>% select(FOCALNESTS)` focal nests, of which `r filter(hep.sp, YEAR==year) %>% summarize(FOCALNESTS-FOCFAILURE)` appeared to successfully fledge. This nest survival rate of `r sprintf("%.1f", round(surv.sp.cur.yr$colony.perc.successful, 1))` ? `r sprintf("%.1f", round(surv.sp.cur.yr$colony.se.perc.successfull, digits=1))`% was FILL HERE than the long term average rate of `r sprintf("%.1f", round(surv.sp.prev.yrs$colony.perc.successful, 1))` ? `r sprintf("%.1f", round(surv.sp.prev.yrs$colony.se.perc.successfull, digits=1))`%. The average number of `r com.name` chicks per stage 4 nest in `r year` was `r sprintf("%.1f", round(prod.sp.cur.yr$mean.brs, 1))` ? `r sprintf("%.1f", round(prod.sp.cur.yr$se.brs, digits=1))`, which was FILL HERE the long term average of `r sprintf("%.1f", round(prod.sp.prev.yrs$mean.brs, 1))` ? `r sprintf("%.1f", round(prod.sp.prev.yrs$se.brs, digits=1))` chicks.
+
+
+```{r echo=FALSE}
+plot.hep.report(df=hep.site,
+				sp=sp)
+```
+
+Figure 1. Peak number of active `r com.name` nests and the long term average number of nests (blue dashed line) at the `r site.name` colony `r filter(min.yrs, SPECIES==sp) %>% select(min.yr)`-`r year`. 
+
+[//]: # "End species block"
+
+

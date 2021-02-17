@@ -1,0 +1,332 @@
+---
+title: ''
+author: ''
+date: ''
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+#
+knitr::opts_knit$set(root.dir = 'C:/Users/scott.jennings/Documents')  #ACR
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+report.year=2017
+
+```
+
+
+
+Bolinas Lagoon Heron and Egret Nesting Summary `r report.year` 
+Results from Heronries at Picher Canyon, Kent Island, and the Bolinas Mainland  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+
+library(tidyverse)
+library(lubridate)
+library(knitr)
+library(pixiedust)
+library(splitstackshape)
+
+## read Bolinas Lagoon season summary file
+bola_seas_summ <- read_csv("C:/Users/scott.jennings/Documents/Projects/HEP/seas_summary.csv") %>%
+  filter(year == report.year, (Code== 53 | Code == 53.1 | Code == 1))
+
+## read in HEP data
+## newer.hep is a file generated from 
+newer.hep <- read_csv("Projects/HEP/newer_hep.csv") %>% 
+  select(CODE, YEAR, SITE, SPECIES, TOTALSPECIES, NUMBERVISITS, PEAKACTVNSTS, INDIVIDUALS, FOCALNESTS, FOCFAILURE, BRD1, BRD2, BRD3, BRD4, BRD5, BRD6, MARSTGEDATE, MARSTAGE1, MARSTAGE2, MARSTAGE3, MARSTAGE4, MARSTAGE5, APRSTGEDATE, APRSTAGE1, APRSTAGE2, APRSTAGE3, APRSTAGE4, APRSTAGE5, MAYSTGEDATE, MAYSTAGE1, MAYSTAGE2, MAYSTAGE3, MAYSTAGE4, MAYSTAGE5, JUNSTGEDATE, JUNSTAGE1, JUNSTAGE2, JUNSTAGE3, JUNSTAGE4, JUNSTAGE5, LTJUNSTGDATE, LTJUNSTAGE1, LTJUNSTAGE2, LTJUNSTAGE3, LTJUNSTAGE4, LTJUNSTAGE5, JULSTGEDATE, JULSTAGE1, JULSTAGE2, JULSTAGE3, JULSTAGE4, JULSTAGE5)
+#data management
+#newer.hep <- droplevels(filter(newer.hep1, PEAKACTVNSTS>0))
+# data management
+# not sure this is needed -- ## newer.hep$SPECIES=as.factor(newer.hep$SPECIES)
+newer.hep[c("FOCALNESTS", "FOCFAILURE", "BRD1", "BRD2", "BRD3", "BRD4", "BRD5", "BRD6")][is.na(newer.hep[c("FOCALNESTS", "FOCFAILURE", "BRD1", "BRD2", "BRD3", "BRD4", "BRD5", "BRD6")])] <- 0
+
+
+
+calc.repro=function(df) { #calculate proportion of nests successful, with se, and productivity
+df=newer.hep
+##-- first peel off brood size columns to calculate average brood size and se
+brds <- df %>% 
+  select(CODE, YEAR, SPECIES, BRD1, BRD2, BRD3, BRD4, BRD5, BRD6) %>% 
+  gather(br.size, num.nests, -CODE, -YEAR, -SPECIES) %>% 
+  mutate(br.size = as.numeric(gsub("BRD", "", br.size)))
+
+# make a row for each nest of each brood size
+brds.longer <- (expandRows(brds, "num.nests"))
+
+brds.prod <- brds.longer %>%
+		group_by(CODE, YEAR, SPECIES) %>%
+		summarize(n.brs = n(),
+		          mean.brs=mean(br.size),
+		          se.brs=var(br.size))
+##-- then add mean and se brood size back to original df
+df1 <- full_join(df, brds.prod)
+
+##-- and finally calculate proportion and se of focal nests that were successful, and colony productivity (average number of chicks per nest attempt)
+## see Kelly et al 2007 Waterbirds for these variance calculations
+## se.brs: var(b) = (s2 / n) ??? (1 - n / N) .
+## se.successful: var(p) = (p ??? (1- p) / n) ??? (n / (n-1)) ??? (1 - n / N)
+## prod.se : var(rs) = [(p)2 ??? var(b)] + [(b)2 ??? var(p)] - [var(b) ??? var(p)] .
+## !! each of these is then sqrt()'ed which, according to JK, provides SE, because they are based on the variance of a statistic, not on the variance of a sample
+df1 <- df1 %>% 
+  mutate(se.brs = (sqrt((se.brs/n.brs)*(1-n.brs/PEAKACTVNSTS))/sqrt(n.brs)),
+         prop.successful = 1-(FOCFAILURE/FOCALNESTS),
+         max.4.successful = ifelse(PEAKACTVNSTS < FOCALNESTS, FOCALNESTS, PEAKACTVNSTS),
+         se.successful = sqrt(((prop.successful*(1-prop.successful))/FOCALNESTS) * 
+                                (FOCALNESTS/(FOCALNESTS-1)) * 
+                                  (1-FOCALNESTS/max.4.successful)/(FOCALNESTS))
+         ) %>% 
+  mutate_each(funs(replace(., is.na(.), 0)), se.brs, mean.brs, prop.successful, se.successful) %>% 
+  mutate(mean.se.brs = paste(sprintf("%.1f", round(mean.brs, 1)), " \261 ", 
+                             sprintf("%.3f", round(se.brs, 3)), 
+                             " (", n.brs, ")", sep = ""),
+         prop.se.successfull = paste(round(prop.successful, 1), " \261 ", 
+                                     round(se.successful, 2),  
+                                     " (", FOCALNESTS, ")", sep = ""),
+         prod.est = as.numeric(prop.successful * mean.brs),
+         prod.se = sqrt((prop.successful^2 * se.brs) + (mean.brs^2 * se.successful) -  (se.successful * se.brs)),
+         prod.est.se = paste(sprintf("%.1f", round(prod.est, 1)), " \261 ", 
+                             sprintf("%.3f", round(prod.se, 3)), sep = ""),
+         prop.se.successfull = paste(sprintf("%.1f", round(prop.successful, 1)), " \261 ", 
+                                     sprintf("%.3f", round(se.successful, 3)),  " (", FOCALNESTS, ")", sep = "")) 
+
+
+## mutate_each is working above, but keeping this for now for replacing NA in multiple columns
+## df1[c("se.brs", "mean.brs", "se.successfull")][is.na(df1[c("se.brs", "mean.brs", "se.successfull")])] <- 0
+
+
+return(df1)
+}
+#brr=calc.repro(sub.hep)
+		 
+
+  
+## for the May and June survey periods, calculate the proportion of all nests that are still guarded (staged 1-3)
+## = (p ??? (1- p) / n) ??? (n / (n-1)) ??? (1 - n / N)
+calc.may.jun.nestprops = function(df) {
+#df <- newer.hep
+  df <- df %>% 
+    mutate(may.guarded = (MAYSTAGE1 + MAYSTAGE2 + MAYSTAGE3),
+           may.all = (MAYSTAGE1 + MAYSTAGE2 + MAYSTAGE3 + MAYSTAGE4 + MAYSTAGE5),
+           may.prop.guarded = may.guarded/may.all,
+           may.se.guarded = sqrt(((may.prop.guarded*(1-may.prop.guarded))/may.all) *
+                                   may.all/(may.all/1) * 
+                                   1),
+           MAYSTGEjdate = yday(MAYSTGEDATE),
+           may.prop.se.guarded = ifelse(may.prop.guarded == "NaN", "NA", paste(sprintf("%.1f", may.prop.guarded), " \261 ", sprintf("%.3f", may.se.guarded)," (", may.all, ")", sep="")),
+           #----
+           jun.guarded = (JUNSTAGE1 + JUNSTAGE2 + JUNSTAGE3),
+           jun.all = (JUNSTAGE1 + JUNSTAGE2 + JUNSTAGE3 + JUNSTAGE4 + JUNSTAGE5),
+           jun.prop.guarded = round(jun.guarded/jun.all, 1),
+           jun.se.guarded = round(sqrt((jun.prop.guarded*(1-jun.prop.guarded))/jun.all), 3),
+           JUNSTGEjdate = yday(df$JUNSTGEDATE),
+           jun.prop.se.guarded = ifelse(jun.prop.guarded == "NaN", "NA", paste(sprintf("%.1f", jun.prop.guarded), " \261 ", sprintf("%.3f", jun.se.guarded)," (", jun.all, ")", sep="")))
+           
+    
+return(df)
+}
+
+
+newer.hep=calc.repro(newer.hep) # calc.repro() is in HEP_code.r
+newer.hep=calc.may.jun.nestprops(newer.hep)
+#newer.hep=parse.CODE(newer.hep) # parse.CODE() is in HEP_code.r; warning about too few values is OK
+
+
+
+## make table with GBHE stats
+table.maker <- function(code, sp){
+ #code=1
+ #sp="GBHE"
+tab <- newer.hep %>% 
+  filter(CODE==code, SPECIES==sp, YEAR>report.year-5, YEAR<=report.year) %>% 
+  mutate(mean.se.brs = ifelse(n.brs==0 | is.na(n.brs), "-", mean.se.brs),
+         prop.se.successfull = ifelse(FOCALNESTS==0 | is.na(FOCALNESTS), "-", prop.se.successfull),
+         prod.est.se = ifelse(FOCALNESTS==0 | n.brs==0 | is.na(FOCALNESTS) | is.na(n.brs), "-", prod.est.se),
+         may.prop.se.guarded = ifelse(may.all==0 | is.na(may.all), "-", may.prop.se.guarded),
+         jun.prop.se.guarded = ifelse(jun.all==0 | is.na(jun.all), "-", jun.prop.se.guarded))%>% 
+  select(CODE, YEAR, PEAKACTVNSTS, mean.se.brs, prop.se.successfull, prod.est.se, may.prop.se.guarded, jun.prop.se.guarded) %>%
+  gather(variable, value, PEAKACTVNSTS:jun.prop.se.guarded)%>% 
+  spread(YEAR,value)
+ 
+var.names <- c("PEAKACTVNSTS", "mean.se.brs", "prop.se.successfull", "prod.est.se", "may.prop.se.guarded", "jun.prop.se.guarded")
+var.nums <- c(1:6)
+Parameter <- c("Peak nests", "Mean brood size \261 se (n)", "Proportion of nests successful \261 se (n)", "Number of chicks fledged per nest attempt \261 se", " Early-May proportion of nests guarded \261 se (n)", "Early-June proportion of nests guarded \261 se (n)")
+var.nms <- data.frame(var.names, var.nums, Parameter)
+
+report.table <- merge(tab, var.nms, by.x = "variable", by.y = "var.names")
+report.table <- with(report.table, report.table[order(var.nums),])
+report.table2 <- select(report.table, Parameter, everything(), -variable, -CODE, -var.nums)
+return(report.table2)
+}
+
+
+
+
+
+
+#this replaces NaN but probably isn't needed here
+#is.nan.data.frame <- function(x)
+#do.call(cbind, lapply(x, is.nan))
+#df1[is.nan(df1)] <- ""
+
+table.formatter <- function(rep.table){
+dust(rep.table) %>% 
+  sprinkle(cols = c("Parameter"), width = 2, width_units="in")  %>% 
+  sprinkle(cols = c(2:6), width = 1, width_units="in")  %>%
+  sprinkle(cols = c(2:6), halign = "center", part = c("head"))  %>% 
+  sprinkle(cols = c(2:6), halign = "center", part = c("body")) %>% 
+  sprinkle(part = c("head"), border= c("top", "bottom")) %>% 
+  sprinkle(part = c("body"), rows = c(6), border= c("bottom"))
+}
+
+```
+
+
+INTRODUCTION AND DATA COLLECTION 
+
+Audubon Canyon Ranch (ACR) has been monitoring nesting Great Blue Herons (*Ardea herodias*), Great Egrets (*Ardea alba*) and Snowy Egrets (*Egretta thula*) in Picher Canyon since 1967. This colony site is located at the Martin Griffin Preserve, on the northeast side of the Bolinas Lagoon, near Bolinas, CA (Figure 1). ACR has also been monitoring nesting herons and egrets at the Bolinas colony site, at the base of the Francisco Mesa adjacent to the Bolinas Channel, since 1990. This colony site's subsite ("any isolated group of nests 100-500 m from other nests"), located on the south end of Kent Island at the mouth of Bolinas Lagoon, has also been monitored by ACR since the site was colonized in 2008. 
+
+ACR biologists monitor every heron or egret nest detected in the vicinity of Bolinas Lagoon. Active colonies are surveyed once-twice per week, from February through July, and historically-occupied colony sites are surveyed approximately once per month to check if the colony has been re-occupied. On each visit to active colonies, the biologist records for each nest the number of adults and chicks, the nest stage (i.e. incubating, nest guarded [at least one parent remains at the nest], nest un-guarded [chicks left alone]; a measure of intraseasonal timing), and any other pertinent information. Additionally, the biologist notes any observed disturbances, or potential predators observed or inferred, in the vicinity of the nesting site. The high frequency of nest checks allows relatively high precision in determining the outcome for each nest. From these nest-based data we derive the following annual summary statistics, which represent key information on breeding phenology and success: 
+
+Peak nests: the total number of active nests in the colony on the earliest peak nesting date. 
+
+Mean brood size: estimates the mean number of young fledged per successful nest  (number of chicks at least 5-7 weeks of age, derived from observations during the post guardian period, "stage-4").  
+
+Proportion of nests successful: the proportion of nests followed through the nesting cycle that fledge at least one chick. 
+
+Chicks fledged per nest attempt: this is a derived estimate of the per capita productivity in the colony calculated by multiplying mean brood size by the proportion of nests successful. It is important to note that brood sizes can be calculated from nests that aren't followed for the entire season, if the age of the young can be confidently determined. Therefore, brood size and nest success are often calculated from different sets of nests. 
+
+Proportion of nests guarded (early May and early June): the proportion of all active nests in the incubation or guardian stages during early May and early June. These proportions are calculated using data from a single visit in the second week of March and the first week of June, respectively. These proportions can be compared across years to evaluate the relative phenology (intraseasonal timing) of breeding for each species. A smaller proportion of nests being guarded indicates nesting is earlier that year than in years with a larger proportion of nests guarded.
+ 
+
+\pagebreak
+RESULTS AND DISCUSSION
+
+PICHER CANYON 
+
+Picher Canyon was surveyed for nesting Ardeids approximately once per month between March and June, `r report.year`.
+
+*Great Blue Heron* - There were `r filter(newer.hep, CODE==1, SPECIES=="GBHE", YEAR==report.year) %>% select(PEAKACTVNSTS)` Great Blue Heron nests in Pitcher Canyon in `r report.year`. Of these, `r filter(newer.hep, CODE==1, SPECIES=="GBHE", YEAR==report.year) %>% select(FOCALNESTS)` were followed as focal nests, and `r filter(newer.hep, CODE==1, SPECIES=="GBHE", YEAR==report.year) %>% summarize(FOCALNESTS-FOCFAILURE)` of these focal nests appeared to fledge at least one chick. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+## call functions from previous chunk to make table with GBHE stats
+pica_gbhe <- table.maker(code=1, sp="GBHE")
+table.formatter(pica_gbhe) 
+
+
+```
+
+
+
+*Great Egret* - There were `r filter(newer.hep, CODE==1, SPECIES=="GREG", YEAR==report.year) %>% select(PEAKACTVNSTS)` Great Egret nests in Pitcher Canyon in `r report.year`. Of these, `r filter(newer.hep, CODE==1, SPECIES=="GREG", YEAR==report.year) %>% select(FOCALNESTS)` were followed as focal nests, and `r filter(newer.hep, CODE==1, SPECIES=="GREG", YEAR==report.year) %>% summarize(FOCALNESTS-FOCFAILURE)` of these focal nests appeared to fledge at least one chick. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+## call functions from previous chunk to make table with GREG stats
+pica_greg <- table.maker(code=1, sp="GREG")
+table.formatter(pica_greg) 
+
+
+```
+
+
+
+
+
+\pagebreak
+BOLINAS 
+
+Surveys of the Bolinas colony began on `r paste(lubridate::day(min(bola_seas_summ$first.survey)),lubridate::month(min(bola_seas_summ$first.survey), label = TRUE), sep = " ")` and were conducted approximately twice per week until `r paste( lubridate::day(max(bola_seas_summ$last.survey)), lubridate::month(max(bola_seas_summ$last.survey), label = TRUE), sep = " ")`.
+
+*Great Blue Heron* - The first active Great Blue Heron nest in the Bolinas colony in `r report.year` was observed on `r paste(lubridate::day(filter(bola_seas_summ, Species =="GBHE")$first.act.nest),lubridate::month(filter(bola_seas_summ, Species =="GBHE")$first.act.nest, label = TRUE), sep = " ")` and the last active nest was observed on `r paste( lubridate::day(filter(bola_seas_summ, Species =="GBHE")$last.act.nest), lubridate::month(filter(bola_seas_summ, Species =="GBHE")$last.act.nest, label = TRUE), sep = " ")`. There were `r filter(newer.hep, CODE==53, SPECIES=="GBHE", YEAR==report.year) %>% select(PEAKACTVNSTS)` Great Blue Heron nests, and of these `r filter(newer.hep, CODE==53, SPECIES=="GBHE", YEAR==report.year) %>% summarize(FOCALNESTS-FOCFAILURE)` nests appeared to fledge at least one chick. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+## call functions from previous chunk to make table with GBHE stats
+bola_gbhe <- table.maker(code=53, sp="GBHE")
+table.formatter(bola_gbhe) 
+
+```
+
+
+*Great Egret* - The first active Great Egret nest in the Bolinas colony in `r report.year` was observed on `r paste(lubridate::day(filter(bola_seas_summ, Species =="GREG")$first.act.nest), lubridate::month(filter(bola_seas_summ, Species =="GREG")$first.act.nest, label = TRUE), sep = " ")` and the last active nest was observed on `r paste(lubridate::day(filter(bola_seas_summ, Species =="GREG")$last.act.nest), lubridate::month(filter(bola_seas_summ, Species =="GREG")$last.act.nest, label = TRUE), sep = " ")`. There were `r filter(newer.hep, CODE==53, SPECIES=="GREG", YEAR==report.year) %>% select(PEAKACTVNSTS)` Great Egret nests, and of these `r filter(newer.hep, CODE==53, SPECIES=="GREG", YEAR==report.year) %>% summarize(FOCALNESTS-FOCFAILURE)` nests appeared to fledge at least one chick. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+## call functions from previous chunk to make table with GREG stats
+bola_greg <- table.maker(code=53, sp="GREG")
+table.formatter(bola_greg)
+
+```
+
+
+
+*Double-crested Cormorant* - For the first time on record, Double-crested Cormorants (*Phalacrocorax auritus*) nested in the Bolinas colony site in `r report.year`. The first active Double-crested Cormorant nest was observed on `r paste( lubridate::day(filter(bola_seas_summ, Species =="DCCO")$first.act.nest), lubridate::month(filter(bola_seas_summ, Species =="DCCO")$first.act.nest, label = TRUE), sep = " ")` and the last active nest was observed on `r paste(lubridate::day(filter(bola_seas_summ, Species =="DCCO")$last.act.nest), lubridate::month(filter(bola_seas_summ, Species =="DCCO")$last.act.nest, label = TRUE), sep = " ")`. `r filter(newer.hep, CODE==53, SPECIES=="DCCO", YEAR==report.year) %>% select(PEAKACTVNSTS)` Double-crested Cormorant nests were established, and of these `r filter(newer.hep, CODE==53, SPECIES=="DCCO", YEAR==report.year) %>% summarize(FOCALNESTS-FOCFAILURE)` nests appeared to fledge at least one chick. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+## call functions from previous chunk to make table with DCCO stats
+bola_dcco <- table.maker(code=53, sp="DCCO")
+table.formatter(bola_dcco)
+
+```
+
+
+
+
+\pagebreak
+KENT ISLAND
+
+Kent Island was checked for nesting Ardeids approximately two times per month during the regular Bolinas colony site surveys.
+
+*Great Blue Heron* - No Great Blue Heron nests were detected on Kent Island in 2016. Great Blue Herons were last observed nesting on Kent Island in 2013. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+## call functions from previous chunk to make table with GBHE stats
+bola_gbhe <- table.maker(code=53.1, sp="GBHE")
+table.formatter(bola_gbhe)
+
+```
+
+
+*Great Egret* - There were no Great Egret nests detected on Kent Island in 2016. Great Egret were last observed nesting on Kent Island in 2012.  
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+## call functions from previous chunk to make table with GREG stats
+bola_greg <- table.maker(code=53.1, sp="GREG")
+table.formatter(bola_greg)
+
+```
+
+
+Figure 1. Approximate locations of Picher Canyon, Bolinas and Kent Island colony sites on Bolinas Lagoon.
+
+ 
+
+
+
+REFERENCES
+
+Kelly, J. P., K. L. Etienne, C. Strong, M. McCaustland, and M. L. Parkes. 2007. Status, trends, and implications for the conservation of heron and egret nesting colonies in the San Francisco Bay area. Waterbirds 30: 455-478. 
+
+
+Millus, S. A., Kelly, J. P. and T. E. Condeso. 2013.  Management framework for protection of the heronry at Martin Griffin Preserve: An assessment and response to the 2013 decline in Great Egret nesting in Picher Canyon.  ACR Technical Report 1967-1-3 ? September 2013, Audubon Canyon Ranch Cypress Grove Research Center P.O. Box 808, Marshall, CA 94940 
+ 
+
+ 
+

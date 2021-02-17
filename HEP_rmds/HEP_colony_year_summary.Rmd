@@ -1,0 +1,119 @@
+---
+title: "Annual colony summary"
+author: "Scott Jennings"
+date: "1/29/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+How does the change in colony size (lambda) relate to productivity in that colony the previous year, and 2 years previous?
+
+Herons and egrets often do no nest until their second spring, and there is some evidence that winter rainfall may reduce hatching year bird survival such that there is a subsequent dip in colony size 2 springs later (Kelly and Condeso 2014). We might expect that the change in size of a colony (lambda) in a given year would be positively related to the number of chicks fledged from that colony in recent years. However, between 1967-79 at Picher Canyon there was no relationship between productivity the prior year and the number of nests in the current year (Pratt and Winkler 1985). That finding is from one colony and just over 10 years. Do we find the same pattern when we consider all North Bay colonies over a period of about 30 years?
+
+We can estimate the number of chicks fledged per nest as the product of the mean brood size of nests that reach fledging age and the proportion of nests followed through the entire season that survive to fledging age (Kelly et al. 2007). In the plots below we consider this the independent variable, shown on the x axis.
+
+We can calculate lambda as the per capita change in total number of nests in each colony between the current year and the year prior. In the plots below this value is represented on the y axis.
+
+First, we calculate these values for each species, colony and year, and compare them visually with scatter plots.To aid visualization of any patterns we can add a LOWESS smoother.
+
+```{r }
+
+# 1 packages ----
+library(tidyverse)
+library(RColorBrewer)
+library(RODBC)
+options(scipen = 999)
+source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
+source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+# source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_data_summary_functions.R")
+
+# 2 data ----
+zsppz <- c("BCNH", "GBHE", "GREG", "SNEG")
+
+hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+# all these functions are in HEP_utility_functions.R
+hep_start <- hep_from_access(hepdata_location)
+hep_sites <- hep_sites_from_access(hepdata_location)
+
+hep <- hep_start %>% 
+  clean_hep() %>% 
+  filter(peakactvnsts >= 0) %>% 
+  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% 
+  trim_hep_columns() %>% 
+  cut_never_nested() %>% 
+  mutate(site.name = as.character(site.name))
+
+  
+```
+
+
+
+```{r}
+# calculate annual percent change in number of nests for each species
+lambda <- hep %>% 
+  hep_annual_changer() %>% 
+  mutate(lambda = per.change.1year/100) %>% 
+  filter(!is.na(prev.yr.nsts), zero2zero == 0) 
+```
+
+
+
+
+```{r}
+# calculate annual percent change in number of nests for each species
+productivity <- hep %>% 
+  calc_repro() 
+
+
+```
+
+
+```{r}
+
+lambda_prod <- full_join(lambda, productivity) %>% 
+  filter(species %in% c("GREG", "GBHE"), zero2some == 0) %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name)
+```
+
+
+```{r}
+
+lambda_plotter <- function(col.par.code, summary.year) {
+  
+  col_lambda <- lambda_prod %>% 
+    filter(parent.code == col.par.code) %>% 
+    mutate(yr.color = ifelse(year == summary.year, "summary.year", "other.years"))
+  
+mycolours <- c("summary.year" = "red", "other.years" = "black")
+  
+  col_spp <- col_lambda %>% 
+    filter(peakactvnsts > 0) %>% 
+    distinct(species)
+  
+  col_yr <- col_lambda %>% 
+    filter(peakactvnsts > 0, year == min(year)) 
+    
+  all_hep_mean <- lambda_prod %>% 
+    filter(species %in% col_spp$species, year >= col_yr$year) %>% 
+    group_by(year, spp.name) %>% 
+    summarise(yr.sp.mean.lambda = mean(lambda))
+  
+  ggplot() +
+    geom_line(data = all_hep_mean, aes(x = year, y = yr.sp.mean.lambda)) +
+    geom_point(data = col_lambda, aes(x = year, y = lambda, color = yr.color)) +
+    scale_color_manual(values = mycolours) +
+    facet_wrap(~spp.name) +
+    theme_bw() +
+    theme(legend.position = "none") +
+    geom_hline(yintercept = 0)
+  
+  
+}
+
+```

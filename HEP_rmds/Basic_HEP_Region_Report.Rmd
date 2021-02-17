@@ -1,0 +1,474 @@
+---
+title: "Heron and Egret nest monitoring summary"
+output: word_document
+---
+
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
+# user inputs
+
+# specify the year you want a report for
+report_year = 2019
+
+# specify which species you want to include
+filter_spp <- c("BCNH", "GBHE", "GREG", "SNEG", "DCCO")
+
+
+# specify which sites, subregion or county you want to summarize
+# you can specify multiple colonies by, eg:
+# which_sites <- c("Bolinas", "Gold Hill")
+# multiple counties, eg:
+# which_sites <- c("ALA", "CCO")
+# or a combination of colonies, counties and subregions, eg:
+# which_sites <- c("MAR", "CSF", "Valley Ford")
+# or just a single colony, subregion or county
+which_sites <- c("Drakes Estero", "Hog Island", "Bear Valley", "Tree Farm")
+
+# levels(hep$county)
+# [1] "ALA" "CCO" "MAR" "NAP" "SAC" "SFR" "SOL" "SON"
+# > levels(hep$subregion)
+# [1] "CSF" "IEB" "NNC" "OUC" "PNM" "RUR" "SSF" "SUS"
+
+
+```
+
+
+
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
+
+
+library(tidyverse)
+library(RColorBrewer)
+library(knitr)
+library(flextable)
+library(officer)
+options(scipen = 999)
+source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
+source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+
+
+# 2 data ----
+
+# all these functions are in HEP_report_utility_functions.R
+hep_start <- hep_from_access(hepdata_location)
+
+hep <- hep_start %>% 
+  clean_hep() %>% 
+  filter(peakactvnsts >= 0) %>% 
+  add_site_names() %>% 
+  trim_hep_columns() %>% 
+  cut_never_nested() %>% 
+  mutate(site.name = as.character(site.name))
+  
+hep_sites <-  hep %>% 
+  select(code, parent.code, site.name, parent.site.name, county, subregion) %>% 
+  filter_all(any_vars(. %in% which_sites)) %>% 
+  distinct()
+
+hep_region_child <- hep %>%
+  filter(code %in% hep_sites$code) %>% 
+  filter(species %in% filter_spp) %>% 
+  droplevels()
+
+hep_region <- hep_region_child%>% 
+  group_by(parent.site.name, parent.code, year, species) %>% 
+  summarise(peakactvnsts = sum(peakactvnsts),
+            focalnests = sum(focalnests),
+            focfailure = sum(focfailure),
+            numbervisits = sum(numbervisits),
+            brd1 = sum(brd1),
+            brd2 = sum(brd2),
+            brd3 = sum(brd3),
+            brd4 = sum(brd4),
+            brd5 = sum(brd5),
+            brd6 = sum(brd6)) %>% 
+  ungroup() %>% 
+  rename(code = parent.code) %>% 
+  mutate_if(is.numeric , replace_na, replace = 0)
+ 
+
+#zspp_distinct = distinct(hep_region, species)
+
+zspp = unname(unlist(distinct(hep_region, species)[,1]))
+zsites <- unname(unlist(distinct(hep_region, parent.site.name)[,1]))
+
+zsites_child <- unname(unlist(distinct(hep_region_child, site.name)[,1]))
+```
+
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
+# new functions used just here
+
+
+fill_all_spp_yrblocks <- function(znum_colonies) {
+all_spp <- distinct(znum_colonies, species)
+all_spp_yrblocks <- rbind(all_spp %>% mutate(year = "mean.all.previous.years"), 
+                          all_spp %>% mutate(year = report_year)) 
+znum_colonies <- znum_colonies %>% 
+  full_join(., all_spp_yrblocks) %>% 
+  replace(is.na(.), "0")
+}       
+
+
+# flextable formatting functions
+flex_table_spp_header <- function(zflextable) {
+  if("GREG" %in% zspp) {
+    zflextable <- zflextable %>% set_header_labels(GREG_a = "Great Egret")
+  } else {
+    zflextable <- zflextable
+  }
+    if("GBHE" %in% zspp) {
+    zflextable <- zflextable %>% set_header_labels(GBHE_a = "Great Blue Heron")
+  } else {
+    zflextable <- zflextable
+  }
+    if("BCNH" %in% zspp) {
+    zflextable <- zflextable %>% set_header_labels(BCNH_a = "Black-crowned Night-heron")
+  } else {
+    zflextable <- zflextable
+  }  
+    if("SNEG" %in% zspp) {
+    zflextable <- zflextable %>% set_header_labels(SNEG_a = "Snowy Egret")
+  } else {
+    zflextable <- zflextable
+  }  
+      if("CAEG" %in% zspp) {
+    zflextable <- zflextable %>% set_header_labels(CAEG_a = "Cattle Egret")
+  } else {
+    zflextable <- zflextable
+  }  
+      if("DCCO" %in% zspp) {
+    zflextable <- zflextable %>% set_header_labels(DCCO_a = "Double-crested Cormorant")
+  } else {
+    zflextable <- zflextable
+  }  
+  return(zflextable)
+}
+
+flex_table_merge_spp_cols <- function(zflextable) {
+  if(any(grepl("DCCO", zflextable$body$col_keys)) == T) {
+     zflextable_out <- zflextable %>%
+  merge_at(i = 1, j = c("DCCO_a", "DCCO_b"), part = "header")
+  } else {
+    zflextable_out <- zflextable
+  }
+    if(any(grepl("GBHE", zflextable$body$col_keys)) == T) {
+     zflextable_out <- zflextable_out %>%
+  merge_at(i = 1, j = c("GBHE_a", "GBHE_b"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+    if(any(grepl("GREG", zflextable$body$col_keys)) == T) {
+     zflextable_out <- zflextable_out %>%
+  merge_at(i = 1, j = c("GREG_a", "GREG_b"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+    if(any(grepl("SNEG", zflextable$body$col_keys)) == T) {
+     zflextable_out <- zflextable_out %>%
+  merge_at(i = 1, j = c("SNEG_a", "SNEG_b"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+    if(any(grepl("BCNH", zflextable$body$col_keys)) == T) {
+     zflextable_out <- zflextable_out %>%
+  merge_at(i = 1, j = c("BCNH_a", "BCNH_b"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+    if(any(grepl("CAEG", zflextable$body$col_keys)) == T) {
+     zflextable_out <- zflextable_out %>%
+  merge_at(i = 1, j = c("CAEG_a", "CAEG_b"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+return(zflextable_out)
+}
+  
+ 
+
+flex_table_vert_borders <- function(zflextable) {
+   zflextable_out <- zflextable
+   if("DCCO_b" %in% zflextable$body$col_keys) {
+     zflextable_out <- zflextable_out %>%
+       border(j = "DCCO_b", border.right = fp_border(color = "black"), part = "body") %>% 
+       border(j = "DCCO_b", i = 2, border.right = fp_border(color = "black"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+     if("GBHE_b" %in% zflextable$body$col_keys) {
+     zflextable_out <- zflextable_out %>%
+       border(j = "GBHE_b", border.right = fp_border(color = "black"), part = "body") %>% 
+       border(j = "GBHE_b", i = 2, border.right = fp_border(color = "black"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+     if("GREG_b" %in% zflextable$body$col_keys) {
+     zflextable_out <- zflextable_out %>%
+       border(j = "GREG_b", border.right = fp_border(color = "black"), part = "body") %>% 
+       border(j = "GREG_b", i = 2, border.right = fp_border(color = "black"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+     if("SNEG_b" %in% zflextable$body$col_keys) {
+     zflextable_out <- zflextable_out %>%
+       border(j = "SNEG_b", border.right = fp_border(color = "black"), part = "body") %>% 
+       border(j = "SNEG_b", i = 2, border.right = fp_border(color = "black"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+     if("BCNH_b" %in% zflextable$body$col_keys) {
+     zflextable_out <- zflextable_out %>%
+       border(j = "BCNH_b", border.right = fp_border(color = "black"), part = "body") %>% 
+       border(j = "BCNH_b", i = 2, border.right = fp_border(color = "black"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+     if("CAEG_b" %in% zflextable$body$col_keys) {
+     zflextable_out <- zflextable_out %>%
+       border(j = "CAEG_b", border.right = fp_border(color = "black"), part = "body") %>% 
+       border(j = "CAEG_b", i = 2, border.right = fp_border(color = "black"), part = "header")
+  } else {
+    zflextable_out <- zflextable_out
+  }
+return(zflextable_out)
+}
+```
+
+
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
+print("For anyone outputting this report, this is the list of subcolonies included in the report you just generated. It is included so you can confirm that the report really contains data for the colonies you want. You can delete this entire gray box before sharing the report.")
+zsites_child
+```
+
+Summary of nest monitoring data for `r zsites` in `r report_year`.
+
+
+Number of colonies monitored. Active colonies had at least 1 active nest during the report year. Innactive colonies had at least 1 active nests in at least 1 pervious year, but no active nests in the report year.
+<br>
+
+Note: Some colonies contain multiple species. This table indicates number of colonies where each species was nesting; the total number of colonies monitored was less than the sum of the Active row in this table (Active colonies table, below). Additionally, some colonies are comprised of multiple subcolonies; those are counted as single colonies here. 
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
+# number of colonies per year
+colony_year <- hep_region %>% 
+  mutate(active = ifelse(peakactvnsts > 0, 1, 0)) %>% 
+  group_by(year, species, active) %>%
+  summarise(num.colonies = n()) %>% 
+  arrange(year, species, active) %>% 
+  ungroup()
+  
+colony_year_wider <- colony_year %>% 
+  spread(active, num.colonies) %>% 
+  rename(inactive = 3, active = 4) %>% 
+  dplyr::mutate(active = ifelse(is.na(active), 0, active),
+         inactive = ifelse(is.na(inactive), 0, inactive),
+         total = active + inactive) %>% 
+  dplyr::select(year, species, total, active, inactive)
+
+prev_years_num_colonies <- colony_year_wider %>% 
+  filter(year < report_year) %>% 
+  group_by(species) %>% 
+  summarise_at(vars(total, active, inactive), funs(mean, sd)) %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  mutate(year = "mean.all.previous.years",
+         total = paste(total_mean, " (", total_sd, ")", sep = ""),
+         active = paste(active_mean, " (", active_sd, ")", sep = ""),
+         inactive = paste(inactive_mean, " (", inactive_sd, ")", sep = "")) %>% 
+  select(-contains("_mean"), -contains("_sd"))
+
+cur_year_num_colonies <- colony_year_wider %>% 
+  filter(year == report_year) 
+
+
+num_colonies <- rbind(prev_years_num_colonies, cur_year_num_colonies) %>% 
+  fill_all_spp_yrblocks()
+
+
+num_colonies_longer <- num_colonies %>% 
+  gather(colony.type, num.colonies, -species, -year) %>% 
+  arrange(species) 
+
+num_colonies_wide <- num_colonies_longer %>% 
+  mutate(spp.year = ifelse(year == "mean.all.previous.years", paste(species, "b", sep = "_"), paste(species, "a", sep = "_"))) %>% 
+  select(-species, -year) %>% 
+  spread(spp.year, num.colonies) %>% 
+  select(colony.type, matches(paste(zspp, collapse = "|"))) %>%
+  #select(colony.type, contains("GREG"), contains("GBHE"), contains("BCNH"), contains("SNEG"), contains("CAEG")) %>%
+  mutate(colony.type = sub("(.)", "\\U\\1", colony.type, perl=TRUE)) # capitalize first letter
+
+
+num_colonies_wide %>% 
+  data.frame() %>% 
+  flextable()
+
+#kable(num_colonies_wide)
+flextable(num_colonies_wide) %>% 
+  flex_table_spp_header() %>% 
+  set_header_labels(colony.type = "") %>% 
+  flex_table_merge_spp_cols() %>% 
+  add_header_row(values = c("Colony status", rep(c(report_year, "Mean of all previous years (SD)"), length(zspp))), top = FALSE) %>% 
+  align_text_col(align = "left", header = TRUE, footer = TRUE) %>% 
+  align_nottext_col(align = "center", header = TRUE, footer = TRUE) %>% 
+  border_remove() %>% 
+  # horizontal borders
+  border(i = 1, border.top = fp_border(color = "black"), part = "header") %>% 
+  border(i = 1, border.top = fp_border(color = "black"), part = "body") %>% 
+  border(i = nrow(num_colonies_wide), border.bottom = fp_border(color = "black"), part = "body") %>% 
+  # vertical borders
+  flex_table_vert_borders() %>% 
+  padding(padding = 2, part = "all") %>% 
+  fit_to_width(max_width = 8)
+
+
+
+
+
+```
+
+
+<br>
+Species nesting at each colony and number of monitoring visits.
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
+# number of colonies per year
+colony_visits <- filter(hep_region, year == report_year) %>% 
+  #filter(peakactvnsts > 0) %>% 
+  group_by(parent.site.name) %>% 
+  filter(numbervisits == max(numbervisits)) %>% 
+  distinct(parent.site.name, numbervisits)
+
+colony_species <- filter(hep_region, year == report_year) %>% 
+  filter(peakactvnsts > 0) %>% 
+  bird_taxa_filter(keep_taxa = filter_spp)%>% 
+  group_by(parent.site.name) %>% 
+  summarise(species = paste(common.name, collapse = ", "))
+
+colony_visits_species <- full_join(colony_visits, colony_species) %>% 
+  rename(Colony = parent.site.name, Species = species) %>% 
+  mutate(Species = ifelse(is.na(Species), paste("Not active", report_year), Species))
+
+
+flextable(colony_visits_species) %>% 
+  set_header_labels(numbervisits = "Number of visits") %>%
+ align_text_col(align = "left", header = TRUE, footer = TRUE) %>% 
+  align_nottext_col(align = "center", header = TRUE, footer = TRUE) %>% 
+  border_remove() %>% 
+  # horizontal borders
+  border(i = 1, border.top = fp_border(color = "black"), part = "header") %>% 
+  border(i = 1, border.top = fp_border(color = "black"), part = "body") %>% 
+  border(i = nrow(colony_visits_species), border.bottom = fp_border(color = "black"), part = "body") %>% 
+  padding(padding = 2, part = "all") %>% 
+  autofit()
+```
+
+<br>
+Total number of nests for each species, all colonies combined.
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
+# number of colonies per year
+num_nests <- hep_region %>% 
+  group_by(year, species) %>%
+  summarise(total.nests = sum(peakactvnsts)) %>% 
+  arrange(year, species) %>% 
+  ungroup()
+  
+
+prev_years_num_nests <- num_nests %>% 
+  filter(year < report_year) %>% 
+  group_by(species) %>% 
+  summarise_at(vars(total.nests), funs(mean, sd))%>% 
+  mutate_if(is.numeric, round, 1) %>% 
+  mutate(year = "mean.all.previous.years",
+         total.nests = paste(mean, " (", sd, ")", sep = "")) %>% 
+  select(-contains("mean"), -contains("sd"))
+
+cur_year_num_nests <- num_nests %>% 
+  filter(year == report_year)  %>% 
+  mutate(year = report_year)
+
+num_nests <- rbind(prev_years_num_nests, cur_year_num_nests) %>% 
+  fill_all_spp_yrblocks()
+
+
+num_nests_wide <- num_nests %>%
+  mutate(spp.year = ifelse(year == "mean.all.previous.years", paste(species, "b", sep = "_"), paste(species, "a", sep = "_"))) %>% 
+  select(-species, -year) %>% 
+  spread(spp.year, total.nests) %>% 
+  select(matches(paste(zspp, collapse = "|")))
+
+flextable(num_nests_wide) %>% 
+  flex_table_spp_header() %>% 
+  flex_table_merge_spp_cols() %>% 
+  add_header_row(values = c(rep(c(report_year, "Mean of all previous years (SD)"), length(zspp))), top = FALSE) %>% 
+  align_nottext_col(align = "center", header = TRUE, footer = TRUE) %>% 
+  border_remove() %>% 
+  # horizontal borders
+  border(i = 1, border.top = fp_border(color = "black"), part = "header") %>% 
+  border(i = 1, border.top = fp_border(color = "black"), part = "body") %>% 
+  border(i = nrow(num_nests_wide), border.bottom = fp_border(color = "black"), part = "body") %>% 
+  # vertical borders
+  flex_table_vert_borders() %>% 
+  padding(padding = 2, part = "all") %>% 
+  fit_to_width(max_width = 8)
+
+
+```
+
+
+
+
+<br>
+Average brood size for each species, all colonies combined.
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE}
+
+
+ 
+
+brsz_prv_yrs <- hep_region %>% 
+  filter(year < report_year) %>% 
+  calc_mean_brood_size_lump_yr_col() %>% 
+  filter(!(is.na(mean.brd.size))) %>% 
+  distinct(species, mean.brd.size, sd.brd.size, brd.n.nests) %>% 
+  mutate(year = "mean.all.previous.years")
+
+brsz_report_yr <- hep_region %>% 
+  filter(year == report_year) %>% 
+  calc_mean_brood_size_lump_yr_col() %>% 
+  filter(!(is.na(mean.brd.size))) %>% 
+  distinct(species, mean.brd.size, sd.brd.size, brd.n.nests) %>% 
+  mutate(year = report_year)
+
+   
+
+
+brood_size <- rbind(brsz_report_yr, brsz_prv_yrs) %>% 
+  fill_all_spp_yrblocks()
+
+brood_size_all <- expand.grid(species = brood_size$species, year = brood_size$year) %>% 
+  distinct() %>% 
+  full_join(., brood_size) %>% 
+  mutate(brood.size = gsub("NaN", "-", brood.size),
+         brood.size = ifelse(is.na(brood.size), "-", brood.size))
+
+
+brood_size_wide <- brood_size %>% 
+  mutate(spp.year = ifelse(year == "mean.all.previous.years", paste(species, "b", sep = "_"), paste(species, "a", sep = "_")),
+         tab.val = paste(round(mean.brd.size, 2), " (", round(sd.brd.size, 2), ")", sep = "")) %>%  
+  select(spp.year, tab.val) %>% 
+  spread(spp.year, tab.val) %>% 
+  select(matches(paste(zspp, collapse = "|")))
+
+flextable(brood_size_wide) %>% 
+  flex_table_spp_header() %>% 
+  flex_table_merge_spp_cols() %>% 
+  add_header_row(values = c(rep(c(report_year, "Mean of all previous years (SD)"), length(.$body$col_keys)/2)), top = FALSE) %>% 
+  align_text_col(align = "left", header = TRUE, footer = TRUE) %>% 
+  align_nottext_col(align = "center", header = TRUE, footer = TRUE) %>% 
+  border_remove() %>% 
+  # horizontal borders
+  border(i = 1, border.top = fp_border(color = "black"), part = "header") %>% 
+  border(i = 1, border.top = fp_border(color = "black"), part = "body") %>% 
+  border(i = nrow(brood_size_wide), border.bottom = fp_border(color = "black"), part = "body") %>% 
+  # vertical borders
+  flex_table_vert_borders() %>%  
+  padding(padding = 2, part = "all") %>% 
+  fit_to_width(max_width = 8)
+
+```
+

@@ -1,0 +1,65 @@
+---
+title: ''
+output: word_document
+---
+
+```{r message=FALSE, error=FALSE, echo=FALSE}
+
+library(tidyverse)
+
+hep_sites_start <- read.csv("HEP_data/tbl_HEPSites.csv")
+names(hep_sites_start) <- tolower(names(hep_sites_start))
+hep_sites <- hep_sites_start %>% 
+  select(code, parent_code, site_name, parent_site_name, county, subregion, utmnorth, utmeast) %>% 
+  filter(subregion != is.na(subregion) | subregion == "")
+
+
+hep_start <- read.csv("HEP_data/tbl_HEPDATA20190916.csv")
+names(hep_start) <- tolower(names(hep_start))
+hep <- hep_start %>% 
+  select(code, year, species, peakactvnsts, contains("brd")) 
+
+hep_and_sites <- full_join(hep, hep_sites) %>% 
+  filter(!is.na(species))
+
+names(hep_and_sites) <- gsub("_", ".", names(hep_and_sites))
+
+# exclude colony X species combos where peakactvnsts = 0 in all years
+hep_use <- hep_and_sites %>% 
+  filter(!is.na(parent.site.name)) %>% 
+  group_by(parent.site.name, species) %>% 
+  summarise(mean.peakactvnsts = mean(peakactvnsts)) %>% 
+  filter(mean.peakactvnsts > 0) %>% 
+  mutate(actv.gr.eq.1yr = 1) %>% 
+  select(-mean.peakactvnsts) %>% 
+  full_join(., filter(hep_and_sites, !is.na(parent.site.name)), by = c("parent.site.name", "species")) %>% 
+  filter(actv.gr.eq.1yr == 1) %>% 
+  arrange(parent.site.name, species, year) %>% 
+  ungroup()
+```
+
+
+
+```{r message=FALSE, error=FALSE, echo=FALSE}
+
+# 1-year % change in number of nests per colony
+hep_changes <- hep_use %>% 
+  select(parent.code, species, year, subregion, peakactvnsts) %>% 
+  group_by(parent.code, species) %>% 
+  arrange(parent.code, species, year) %>%
+  mutate(consec.yrs = ifelse(year - lag(year) == 1, 1, 0),
+         abs.change.1year = ifelse(consec.yrs == 1, peakactvnsts - lag(peakactvnsts), NA),
+         per.change.1year = ifelse(consec.yrs == 1, ((peakactvnsts - lag(peakactvnsts))/lag(peakactvnsts))*100, NA),
+         zero2zero = ifelse(peakactvnsts == 0 & abs.change.1year == 0, 1, 0),
+         zero2some = ifelse(lag(peakactvnsts) == 0 & peakactvnsts > 0, 1, 0))%>% 
+  mutate(per.change.1year = ifelse(per.change.1year == Inf, (100 * abs.change.1year), per.change.1year))
+%>% 
+  left_join(., spp.name) %>% 
+  left_join(., hep.subreg.key) %>% 
+  ungroup()  %>% 
+  arrange(parent.site.name, species, year) %>% 
+  filter(consec.yrs == 1, zero2zero == 0) 
+
+
+
+```

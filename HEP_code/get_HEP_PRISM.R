@@ -37,7 +37,14 @@ write.csv(hep_parent_sites_dd_df, "HEP_data/hep_parent_sites_dd_df.csv", row.nam
 # currently saving these to HEP_data/hep_prism_data
 
 
+# next, consolidate those files
 
+hep_prism_90_04 <- read.csv("HEP_data/hep_prism_data/PRISM_ppt_stable_4km_199001_200412.csv", skip = 10)
+hep_prism_05_19 <- read.csv("HEP_data/hep_prism_data/PRISM_ppt_stable_4km_200501_201912.csv", skip = 10)
 
+hep_prism <- rbind(hep_prism_90_04, hep_prism_05_19) %>% 
+  separate(Date, c("year", "month"), sep = "-", remove = F) %>% 
+  rename(rain.mm = ppt..mm.) %>% 
+  select(parent.code = Name, year, month, rain.mm)
 
-
+saveRDS(hep_prism, "HEP_data/hep_prism_data/hep_prism_combined")         

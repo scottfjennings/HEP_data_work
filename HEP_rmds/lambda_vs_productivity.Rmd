@@ -1,0 +1,133 @@
+---
+title: "Great Egret and Great Blue Heron lambda relative to prior years productivity"
+author: "Scott Jennings"
+date: "1/27/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+How does the change in colony size (lambda) relate to productivity in that colony the previous year, and 2 years previous?
+
+Herons and egrets often do no nest until their second spring, and there is some evidence that winter rainfall may reduce hatching year bird survival such that there is a subsequent dip in colony size 2 springs later (Kelly and Condeso 2014). We might expect that the change in size of a colony (lambda) in a given year would be positively related to the number of chicks fledged from that colony in recent years. However, between 1967-79 at Picher Canyon there was no relationship between productivity the prior year and the number of nests in the current year (Pratt and Winkler 1985). That finding is from one colony and just over 10 years. Do we find the same pattern when we consider all North Bay colonies over a period of about 30 years?
+
+We can estimate the number of chicks fledged per nest as the product of the mean brood size of nests that reach fledging age and the proportion of nests followed through the entire season that survive to fledging age (Kelly et al. 2007). In the plots below we consider this the independent variable, shown on the x axis.
+
+We can calculate lambda as the per capita change in total number of nests in each colony between the current year and the year prior. In the plots below this value is represented on the y axis.
+
+First, we calculate these values for each species, colony and year, and compare them visually with scatter plots.To aid visualization of any patterns we can add a LOWESS smoother.
+
+```{r }
+
+# 1 packages ----
+library(tidyverse)
+library(RColorBrewer)
+library(RODBC)
+options(scipen = 999)
+source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
+source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+# source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_data_summary_functions.R")
+
+# 2 data ----
+zsppz <- c("BCNH", "GBHE", "GREG", "SNEG")
+
+hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+# all these functions are in HEP_utility_functions.R
+hep_start <- hep_from_access(hepdata_location)
+hep_sites <- hep_sites_from_access(hepdata_location)
+
+hep <- hep_start %>% 
+  clean_hep() %>% 
+  filter(peakactvnsts >= 0) %>% 
+  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% 
+  trim_hep_columns() %>% 
+  cut_never_nested() %>% 
+  mutate(site.name = as.character(site.name))
+  
+```
+
+
+
+```{r}
+# calculate annual percent change in number of nests for each species
+lambda <- hep %>% 
+  hep_annual_changer() %>% 
+  mutate(lambda = per.change.1year/100) %>% 
+  filter(!is.na(prev.yr.nsts), zero2zero == 0) 
+```
+
+
+
+
+```{r}
+# calculate annual percent change in number of nests for each species
+productivity <- hep %>% 
+  calc_repro() 
+
+
+```
+
+
+```{r}
+
+lambda_prod <- full_join(lambda, productivity) %>% 
+  filter(species %in% c("GREG", "GBHE"), zero2some == 0) %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name)
+```
+
+```{r}
+prod_lag_plotter <- function(n.lag = 1) {
+  xlab = ifelse(n.lag == 1, 
+                "Productivity in previous year",
+                paste("Productivity", n.lag, "years previous"))
+  
+zplot <- lambda_prod %>%
+  group_by(code, species) %>% 
+  mutate(prev.yr.prod = lag(prod, n.lag)) %>% 
+ggplot() +
+  geom_point(aes(x = prev.yr.prod, y = lambda)) +
+  geom_smooth(aes(x = prev.yr.prod, y = lambda)) +
+  facet_wrap(~spp.name, scales = "free") +
+  xlab(xlab) +
+  ylab("Per capita change in number of nests from previous year") +
+  theme_bw()
+return(zplot)
+
+}
+
+```
+  
+```{r}
+prod_lag_plotter(1)
+
+```
+
+
+```{r}
+prod_lag_plotter(2)
+
+```
+ 
+```{r}
+prod_lag_plotter(3)
+
+```
+
+
+Visual examination of these plots suggests little relationship between prior years productivity and change in colony size at the colony scale. If anything, for Great Blue Heron the biggest increases in colony size appear to occur at intermediate values of productivity, but there are relatively few of these instances. There may be a slight positive relationship for Great Egrets, but it is difficult to determine 
+
+Young herons and egrets may disperse to nearby colonies rather than breed at their natal colony. Thus we may expect to see a relationship between productivity and lambda among colonies that lie within certain distances of each other. My next steps will be to figure out how to quantify any such patterns.
+
+
+References
+
+Kelly, J. P., K. Etienne, C. Strong, M. McCaustland, and M. L. Parkes. 2007. Status, Trends, and Implications for the Conservation of Heron and Egret Nesting Colonies in the San Francisco Bay Area.
+
+Kelly, J. P., and T. E. Condeso. 2014. Rainfall Effects on Heron and Egret Nest Abundance in the San Francisco Bay Area. Wetlands 34:893–903.
+
+Pratt, H. M., and D. W. Winkler. 1985. Clutch Size , Timing of Laying , and Reproductive Success in a Colony of Great Blue Herons and Great Egrets. The Auk 102:49–63.
