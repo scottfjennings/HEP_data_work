@@ -48,7 +48,9 @@ hep_distances_long <- hep_distances2 %>%
               data.frame() %>% 
               select(code.to = code, name = col.ind)) %>% 
   select(code.from, code.to, distance.to.colony, -col.ind, -name) %>% 
-  arrange(distance.to.colony, code.from)
+  arrange(distance.to.colony, code.from) %>% 
+  mutate(distance.to.colony = as.numeric(distance.to.colony))
 
 
+saveRDS(hep_distances_long, "HEP_data/hep_colony_distances")
  
