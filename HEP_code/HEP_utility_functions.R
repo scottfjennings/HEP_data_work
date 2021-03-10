@@ -37,8 +37,7 @@ close(con2)
 
 names(out_table) <- tolower(names(out_table))
 names(out_table) <- gsub("_", ".", names(out_table))
-out_table <- out_table %>% 
-  dplyr::select(code, parent.code, site.name, parent.site.name, atlas.code, county, subregion, old.name, utmnorth, utmeast) # %>% 
+out_table <- out_table  # %>% 
   #mutate(code = as.character(code),
   #       parent.code = as.character(parent.code),
   #       site.name = as.character(site.name),
