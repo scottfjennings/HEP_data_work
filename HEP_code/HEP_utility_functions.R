@@ -14,7 +14,7 @@ library(RODBC)
 
 # default location, can be overwritten later
 #hepdata_location = "S:/Databases/HEP_data/HEPDATA.accdb"
-hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+# hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # data reading ----
 hep_from_access <- function(hepdata_location = hepdata_location){
  db <- hepdata_location
