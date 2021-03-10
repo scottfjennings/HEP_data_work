@@ -17,7 +17,12 @@ library(RODBC)
 # hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # data reading ----
 hep_from_access <- function(hepdata_location = hepdata_location){
- db <- hepdata_location
+  if(is.na(hepdata_location)){
+    print("Please assign location of HEPDATA access file to hepdata_location")
+  } else {
+    db <- hepdata_location
+  }
+ 
  con2 <- odbcConnectAccess2007(db)
 
 out_table <- sqlFetch(con2, "tbl_HEPDATA") 
@@ -28,7 +33,12 @@ return(out_table)
 }
 
 hep_sites_from_access <- function(hepdata_location = hepdata_location){
- db <- hepdata_location
+  if(is.na(hepdata_location)){
+    print("Please assign location of HEPDATA access file to hepdata_location")
+  } else {
+    db <- hepdata_location
+  }
+ 
  con2 <- odbcConnectAccess2007(db)
 
 out_table <- sqlFetch(con2, "tbl_HEPSITES") 
