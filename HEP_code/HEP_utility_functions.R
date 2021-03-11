@@ -242,9 +242,11 @@ hep_annual_changer <- function(hep) {
 hep_changes <- hep %>% 
   group_by(parent.site.name, species, year, subregion) %>% 
   summarise(peakactvnsts = sum(peakactvnsts)) %>% 
+  ungroup() %>% 
+  group_by(parent.site.name, species) %>% 
   arrange(parent.site.name, species, year) %>%
-  mutate(prev.yr.nsts = lag(peakactvnsts),
-         #consec.yrs = ifelse(year - lag(year) == 1, 1, 0),
+  mutate(consec.yrs = year - lag(year) == 1,
+         prev.yr.nsts = ifelse(consec.yrs == T, lag(peakactvnsts), NA),
          abs.change.1year = peakactvnsts - lag(peakactvnsts),
          per.change.1year = ((peakactvnsts - prev.yr.nsts)/prev.yr.nsts)*100,
          zero2zero = ifelse(peakactvnsts == 0 & prev.yr.nsts == 0, 1, 0),
