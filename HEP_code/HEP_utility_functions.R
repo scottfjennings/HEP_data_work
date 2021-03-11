@@ -240,8 +240,8 @@ calc_mean_brood_size_lump_yr_col <- function(hep) {
 # annual percent change in colony size ----
 hep_annual_changer <- function(hep) {
 hep_changes <- hep %>% 
-  select(parent.site.name, species, year, subregion, peakactvnsts) %>% 
-  group_by(parent.site.name, species) %>% 
+  group_by(parent.site.name, species, year, subregion) %>% 
+  summarise(peakactvnsts = sum(peakactvnsts)) %>% 
   arrange(parent.site.name, species, year) %>%
   mutate(prev.yr.nsts = lag(peakactvnsts),
          #consec.yrs = ifelse(year - lag(year) == 1, 1, 0),
