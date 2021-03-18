@@ -145,13 +145,13 @@ cut_leading_0s <- function(hep) {
 
 # trim_hep_columns(); trim extra columns ----
 trim_hep_columns <- function(hep, disturbance = TRUE, stage = TRUE, meta = TRUE) {
-  if(disturbance == TRUE) {
+  if(disturbance) {
     hep <- select(hep, -contains("dist"), -contains("roosting"), -contains("nesting"))
   }
-    if(stage == TRUE) {
+    if(stage) {
     hep <- select(hep, -contains("stage"), -contains("stg"))
     }
-      if(meta == TRUE) {
+      if(meta) {
     hep <- select(hep, -contains("notes"), -contains("source"), -contains("entry"), -contains("entered"), -contains("dataid"))
   }
 }
@@ -244,6 +244,7 @@ hep_changes <- hep %>%
   summarise(peakactvnsts = sum(peakactvnsts)) %>% 
   ungroup() %>% 
   group_by(parent.site.name, species) %>% 
+  summarise(peakactvnsts = sum(peakactvnsts)) %>% 
   arrange(parent.site.name, species, year) %>%
   mutate(consec.yrs = year - lag(year) == 1,
          prev.yr.nsts = ifelse(consec.yrs == T, lag(peakactvnsts), NA),
