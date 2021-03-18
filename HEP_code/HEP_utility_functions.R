@@ -243,7 +243,7 @@ hep_changes <- hep %>%
   group_by(parent.site.name, species, year, subregion) %>% 
   summarise(peakactvnsts = sum(peakactvnsts)) %>% 
   ungroup() %>% 
-  group_by(parent.site.name, species) %>% 
+  group_by(parent.site.name, species) %>%
   summarise(peakactvnsts = sum(peakactvnsts)) %>% 
   dplyr::arrange(year, parent.site.name, species) %>%
   mutate(consec.yrs = year - lag(year) == 1,
