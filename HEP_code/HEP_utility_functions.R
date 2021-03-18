@@ -149,7 +149,7 @@ trim_hep_columns <- function(hep, disturbance = TRUE, stage = TRUE, meta = TRUE)
     hep <- select(hep, -contains("dist"), -contains("roosting"), -contains("nesting"))
   }
     if(stage == TRUE) {
-    hep <- select(hep, -contains("stage"), -contains("stge"), -contains("stg"))
+    hep <- select(hep, -contains("stage"), -contains("stg"))
     }
       if(meta == TRUE) {
     hep <- select(hep, -contains("notes"), -contains("source"), -contains("entry"), -contains("entered"), -contains("dataid"))
@@ -247,15 +247,14 @@ hep_changes <- hep %>%
   arrange(parent.site.name, species, year) %>%
   mutate(consec.yrs = year - lag(year) == 1,
          prev.yr.nsts = ifelse(consec.yrs == T, lag(peakactvnsts), NA),
-         abs.change.1year = peakactvnsts - lag(peakactvnsts),
+         abs.change.1year = peakactvnsts - prev.yr.nsts,
          per.change.1year = ((peakactvnsts - prev.yr.nsts)/prev.yr.nsts)*100,
-         zero2zero = ifelse(peakactvnsts == 0 & prev.yr.nsts == 0, 1, 0),
-         zero2some = ifelse(prev.yr.nsts == 0 & peakactvnsts > 0, 1, 0)) %>% 
+         zero2zero = ifelse(consec.yrs, peakactvnsts == 0 & prev.yr.nsts == 0, NA),
+         zero2some = ifelse(consec.yrs, prev.yr.nsts == 0 & peakactvnsts > 0, NA)) %>% 
   #mutate(per.change.1year = ifelse(per.change.1year == Inf, (100 * abs.change.1year), per.change.1year))%>% 
   #left_join(., spp.name) %>% 
   #left_join(., hep.subreg.key) %>% 
-  ungroup()  %>% 
-  arrange(parent.site.name, species, year)
+  ungroup()  
 }
 
 # function to calculate mean and sd for colony-level productivity parameters: brood size, proportion of nests successfull, colony productivity
