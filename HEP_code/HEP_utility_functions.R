@@ -245,7 +245,7 @@ hep_changes <- hep %>%
   ungroup() %>% 
   group_by(parent.site.name, species) %>% 
   summarise(peakactvnsts = sum(peakactvnsts)) %>% 
-  arrange(parent.site.name, species, year) %>%
+  dplyr::arrange(year, parent.site.name, species) %>%
   mutate(consec.yrs = year - lag(year) == 1,
          prev.yr.nsts = ifelse(consec.yrs == T, lag(peakactvnsts), NA),
          abs.change.1year = peakactvnsts - prev.yr.nsts,
