@@ -1,0 +1,263 @@
+---
+title: "How are the egrets doing?"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+
+
+```{r }
+
+library(tidyverse)
+library(devtools)
+library(ggmap)
+library(RColorBrewer)
+library(here)
+library(sp)
+library(plotly)
+library(leaflet)
+
+options(scipen = 999)
+source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
+source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+# source_url("https://raw.githubusercontent.com/scottfjennings/HEP_data_work/master/HEP_code/HEP_utility_functions.R")
+
+
+report.year = 2019
+```
+
+
+```{r }
+#  data ----
+zsppz <- c("BCNH", "GBHE", "GREG", "SNEG")
+
+hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+# all these functions are in HEP_utility_functions.R
+hep_start <- hep_from_access(hepdata_location)
+hep_sites <- hep_sites_from_access(hepdata_location)
+
+parent_sites <- hep_sites %>% 
+  filter(!is.na(utmnorth), !is.na(utmeast), !is.na(parent.code)) %>% 
+  group_by(parent.code) %>%
+  summarise(utmnorth = mean(utmnorth),
+            utmeast = mean(utmeast))
+
+parent_sites_utm <- SpatialPointsDataFrame(coords = cbind(parent_sites$utmeast, parent_sites$utmnorth), data = parent_sites, proj4string = CRS("+proj=utm +zone=10 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"))
+
+parent_sites_dd <- spTransform(parent_sites_utm, CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+
+hep <- hep_start %>% 
+  clean_hep() %>% 
+  filter(peakactvnsts >= 0) %>% # remove "no data" records
+  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # add human readable colony names
+  trim_hep_columns() %>% # remove set blocks of columns
+  cut_never_nested() %>% # remove all records for colony X species that were never really active _ cut artifact of "complete" HEPDATA
+  mutate(site.name = as.character(site.name))
+  
+
+hep_changes <- hep %>% 
+  hep_annual_changer() %>% 
+  filter(year >= 1990) %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name) %>% 
+  mutate(per.change.1year = ifelse(zero2zero, 0, per.change.1year),
+         per.change.1year = ifelse(zero2some, abs.change.1year * 100, per.change.1year)) %>% 
+  distinct()
+
+
+# calculate the cumulative annual rainfall from march of the previous year through feb of the current year
+# use of this rainfall value in a model will assume that the rainfall effect on current year nest abundance acts on productivity the previous breeding season and on survival of adults and juv from previous breeding season through onset of current breeding season
+birdyear_rain <- readRDS(here("HEP_data/hep_prism_data/hep_prism_combined")) %>% 
+  mutate(month = as.numeric(month),
+         year = as.numeric(year)) %>% 
+  mutate(year = ifelse(month <= 2, year, year + 1)) %>% 
+  group_by(parent.code, year) %>% 
+  summarise(rain = sum(rain.mm)) %>% 
+  ungroup() %>% 
+  left_join(., dplyr::select(hep_sites, parent.code, parent.site.name)) 
+
+hep_changes_rain <- left_join(hep_changes, birdyear_rain) %>% 
+  filter(!is.na(per.change.1year)) %>% 
+  distinct()
+
+# annual mean percent change in colony size
+ann_change_study_area <- hep_changes_rain %>% 
+  group_by(year, species, spp.name) %>% 
+  summarise(mean.per.change = mean(per.change.1year),
+            num.colonies = n(),
+            se.percent.change = sd(per.change.1year)/sqrt(num.colonies)) %>% 
+  ungroup()
+
+
+
+ann_change_plot <- ann_change_study_area  %>% 
+  filter(species == "GREG") %>% 
+  mutate(spp.name = factor(spp.name, levels = levels(core4spp))) %>% 
+ggplot() +
+  geom_point(aes(year, mean.per.change, color = spp.name,
+                 text = paste(year, "\n",
+                                  "% change from last year: ", round(mean.per.change, 1),  "\n",
+                                  "# active colonies: ", num.colonies))) +
+  geom_line(aes(year, mean.per.change, color = spp.name)) +
+  geom_errorbar(aes(x = year, ymin = mean.per.change - se.percent.change, ymax = mean.per.change + se.percent.change, color = spp.name)) +
+  scale_color_manual(values = core4spp_colors) +
+  geom_hline(yintercept = 0) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ylab("") +
+  ggtitle("Average % change in colony size")
+
+ggplotly(ann_change_plot, tooltip = "text")
+
+
+```
+
+```{r}
+
+zspecies = "GREG"
+
+zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
+                   zspecies == "CAEG" ~ brewer.pal(8, "Dark2")[2],
+                   zspecies == "GBHE" ~ brewer.pal(8, "Dark2")[3],
+                   zspecies == "GREG" ~ brewer.pal(8, "Dark2")[4],
+                   zspecies == "SNEG" ~ brewer.pal(8, "Dark2")[5],
+                   zspecies == "All" ~ brewer.pal(8, "Dark2")[6])
+
+
+spp_report_year <- hep_changes_rain  %>% 
+  filter(species == zspecies, year == report.year) %>% 
+  left_join(., parent_sites)
+
+spp_report_year_utm <- SpatialPointsDataFrame(coords = cbind(spp_report_year$utmeast, spp_report_year$utmnorth), data = spp_report_year, proj4string = CRS("+proj=utm +zone=10 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"))
+
+spp_report_year_dd <- spTransform(spp_report_year_utm, CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+spp_report_year_dd_df <- data.frame(spp_report_year_dd) %>% 
+  rename(lon = coords.x1, lat = coords.x2) %>% 
+  mutate(direction.change = case_when(per.change.1year > 0 ~ 1,
+                                      per.change.1year == 0 ~ 2,
+                                      per.change.1year < 0 ~ 3),
+         direction.change.text = case_when(per.change.1year > 0 ~ "Increase",
+                                      per.change.1year == 0 ~ "No change",
+                                      per.change.1year < 0 ~ "Decrease"),
+         abs.change = abs(per.change.1year),
+         per.change.1year = round(per.change.1year, 1)) %>% 
+  filter(!zero2zero)
+
+# mean(parent_sites_dd@coords[,1])
+# mean(parent_sites_dd@coords[,2])
+
+# parent_sites_dd@bbox
+
+
+```
+<br>
+2019 colonies
+<br>
+```{r}
+
+
+
+hep.center <- c(left = -122.9409, bottom = 37.8261, right = -121.79534, top = 38.62336)
+hep.terrain.map <- get_stamenmap(hep.center, maptype = "terrain-background", zoom = 9, color="bw")
+
+sp_map <- ggmap(hep.terrain.map) +
+  geom_point(aes(lon, lat, shape = direction.change.text, size = abs.change,
+                     text = paste(parent.site.name, "\n",
+                                  "% change from last year: ", per.change.1year,  "\n",
+                                  "# nests this year: ", peakactvnsts,"\n",
+                                  "# nests last year: ", prev.yr.nsts)),
+                data = spp_report_year_dd_df, color = zcolor) +
+  theme(legend.position = "none") +
+  ylab("") +
+  xlab("")
+
+ggplotly(sp_map, tooltip = "text")%>% 
+  layout(legend=list(orientation = "v",x = 0.5, y = .5))
+
+
+```
+
+
+
+
+```{r}
+
+
+
+labs <- lapply(seq(nrow(spp_report_year_dd_df)), function(i) {
+  paste0( '<p>', spp_report_year_dd_df[i, "parent.site.name"], '<p></p>', 
+          "% change from last year: ", spp_report_year_dd_df[i, "per.change.1year"],  '<p></p>',
+          "# nests this year: ", spp_report_year_dd_df[i, "peakactvnsts"],'</p><p>', 
+          "# nests last year: ", spp_report_year_dd_df[i, "prev.yr.nsts"]) 
+})
+
+
+
+# this is modified from https://stackoverflow.com/questions/41372139/using-diamond-triangle-and-star-shapes-in-r-leaflet
+# which is modified from 
+# https://github.com/rstudio/leaflet/blob/master/inst/examples/icons.R#L24
+pchIcons = function(pch = 1, width = 30, height = 30, bg = "transparent", col = zcolor, ...) {
+  n = length(pch)
+  files = character(n)
+  # create a sequence of png images
+  for (i in seq_len(n)) {
+    f = tempfile(fileext = '.png')
+    png(f, width = width, height = height, bg = bg)
+    par(mar = c(0, 0, 0, 0))
+    plot.new()
+    points(.5, .5, pch = pch[i], col = col[i], cex = min(width, height) / 8, ...)
+    dev.off()
+    files[i] = f
+  }
+  files
+}
+
+
+
+shapes = c(1, 0, 2) # base R plotting symbols (http://www.statmethods.net/advgraphs/parameters.html)
+iconFiles = pchIcons(shapes, 20, 20, col = c(zcolor, zcolor, zcolor), lwd = 4)
+
+
+spp_report_year_dd_df %>%
+leaflet() %>%
+addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") %>%
+addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") %>%
+addLayersControl(baseGroups = c("World Imagery", "Toner Lite")) %>%
+  addMarkers(
+    data = spp_report_year_dd_df,
+    icon = ~ icons(
+      iconUrl = iconFiles[direction.change],
+      popupAnchorX = 20, popupAnchorY = 0
+    ),
+    label=lapply(labs, htmltools::HTML)
+  )%>%
+addMiniMap(
+    toggleDisplay = TRUE,
+    tiles = providers$Stamen.TonerLite
+    )
+
+
+spp_report_year_dd_df %>%
+leaflet() %>%
+addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") %>%
+addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") %>%
+addLayersControl(baseGroups = c("World Imagery", "Toner Lite")) %>%
+addCircleMarkers(label = lapply(labs, htmltools::HTML),
+           radius = ~log(abs.change + 1 + 1),
+           color = ~zcolor,
+           labelOptions = labelOptions(textsize = "15px")) %>%
+setView(lat = 38.27, lng = -122.3, zoom = 9) %>%
+addMiniMap(
+    toggleDisplay = TRUE,
+    tiles = providers$Stamen.TonerLite
+    )
+
+
+
+```
+
