@@ -82,17 +82,15 @@ hep_species_order <- data.frame(species = c("GREG", "GBHE", "BCNH", "SNEG", "CAE
                                 sp.order = seq(1:6))  
 
 # define_species_colors(); define standard species colors for plotting ----
-define_species_colors <- function(hep) {
-  # input df must be the outpout of clean_hep()
-  # should not change number of rows, should add 2 columns
+
   spp_color_name = data.frame(species = c("BCNH", "CAEG", "GBHE", "GREG", "SNEG", "All", "DCCO"),
                     spp.color = c(brewer.pal(8, "Dark2")[1], brewer.pal(8, "Dark2")[2], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[6], brewer.pal(8, "Dark2")[7]),
-                    spp.name = c("Black-crowned Night-heron", "Cattle Egret", "Great Blue Heron", "Great Egret", "Snowy Egret", "All", "Double-crested Cormorant")) 
+                    spp.name = c("Black-crowned Night-heron", "Cattle Egret", "Great Blue Heron", "Great Egret", "Snowy Egret", "All", "Double-crested Cormorant")) %>% 
+  mutate(spp.name = factor(spp.name, levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron", "Cattle Egret", "Double-crested Cormorant", "All")))
 
-hep <- left_join(hep, spp_color_name)  %>% 
-  mutate(spp.color = as.character(spp.color)) %>% 
-    ungroup()
-}
+core4spp <- factor(c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"), levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"))
+core4spp_colors <- c(brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[1])
+
 
 # add_site_names(); combine with site names ----
 add_site_names <- function(hep) { 
@@ -240,16 +238,16 @@ calc_mean_brood_size_lump_yr_col <- function(hep) {
 # annual percent change in colony size ----
 hep_annual_changer <- function(hep) {
 hep_changes <- hep %>% 
-  group_by(parent.site.name, species, year) %>%
+  group_by(parent.code, species, year) %>%
   summarise(peakactvnsts = sum(peakactvnsts)) %>% 
-  dplyr::arrange(parent.site.name, species, year) %>%
+  dplyr::arrange(parent.code, species, year) %>%
   mutate(consec.yrs = year - lag(year) == 1,
          prev.yr.nsts = ifelse(consec.yrs == T, lag(peakactvnsts), NA),
          abs.change.1year = peakactvnsts - prev.yr.nsts,
          per.change.1year = ((peakactvnsts - prev.yr.nsts)/prev.yr.nsts)*100,
          zero2zero = ifelse(consec.yrs, peakactvnsts == 0 & prev.yr.nsts == 0, NA),
          zero2some = ifelse(consec.yrs, prev.yr.nsts == 0 & peakactvnsts > 0, NA)) %>% 
-  #mutate(per.change.1year = ifelse(per.change.1year == Inf, (100 * abs.change.1year), per.change.1year))%>% 
+  mutate(per.change.1year = ifelse(per.change.1year == Inf, (100 * abs.change.1year), per.change.1year))%>% 
   #left_join(., spp.name) %>% 
   #left_join(., hep.subreg.key) %>% 
   ungroup()  
