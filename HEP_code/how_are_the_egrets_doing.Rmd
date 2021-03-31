@@ -1,5 +1,4 @@
 ---
-title: "How are the egrets doing?"
 output:
   html_document:
     df_print: paged
@@ -34,33 +33,27 @@ report.year = 2019
 
 ```{r }
 #  data ----
-zsppz <- c("BCNH", "GBHE", "GREG", "SNEG")
 
 hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # all these functions are in HEP_utility_functions.R
 hep_start <- hep_from_access(hepdata_location)
-hep_sites <- hep_sites_from_access(hepdata_location)
-
+hep_sites <- hep_sites_from_access(hepdata_location) 
 parent_sites <- hep_sites %>% 
   filter(!is.na(utmnorth), !is.na(utmeast), !is.na(parent.code)) %>% 
-  group_by(parent.code) %>%
+  group_by(parent.code, parent.site.name) %>%
   summarise(utmnorth = mean(utmnorth),
             utmeast = mean(utmeast))
-
 parent_sites_utm <- SpatialPointsDataFrame(coords = cbind(parent_sites$utmeast, parent_sites$utmnorth), data = parent_sites, proj4string = CRS("+proj=utm +zone=10 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"))
-
 parent_sites_dd <- spTransform(parent_sites_utm, CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
 
-hep <- hep_start %>% 
+
+hep_changes <- hep_start %>% 
   clean_hep() %>% 
   filter(peakactvnsts >= 0) %>% # remove "no data" records
   left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # add human readable colony names
   trim_hep_columns() %>% # remove set blocks of columns
   cut_never_nested() %>% # remove all records for colony X species that were never really active _ cut artifact of "complete" HEPDATA
-  mutate(site.name = as.character(site.name))
-  
-
-hep_changes <- hep %>% 
+  mutate(site.name = as.character(site.name)) %>% 
   hep_annual_changer() %>% 
   filter(year >= 1990) %>% 
   bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
@@ -69,58 +62,114 @@ hep_changes <- hep %>%
          per.change.1year = ifelse(zero2some, abs.change.1year * 100, per.change.1year)) %>% 
   distinct()
 
-
-# calculate the cumulative annual rainfall from march of the previous year through feb of the current year
-# use of this rainfall value in a model will assume that the rainfall effect on current year nest abundance acts on productivity the previous breeding season and on survival of adults and juv from previous breeding season through onset of current breeding season
-birdyear_rain <- readRDS(here("HEP_data/hep_prism_data/hep_prism_combined")) %>% 
-  mutate(month = as.numeric(month),
-         year = as.numeric(year)) %>% 
-  mutate(year = ifelse(month <= 2, year, year + 1)) %>% 
-  group_by(parent.code, year) %>% 
-  summarise(rain = sum(rain.mm)) %>% 
+# number of nests and colonies each year
+annual_nests_colonies <- hep_start %>% 
+  clean_hep() %>% 
+  filter(peakactvnsts >= 0) %>% # remove "no data" records
+  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # add human readable colony names
+  trim_hep_columns() %>% # remove set blocks of columns
+  cut_never_nested() %>% # remove all records for colony X species that were never really active _ cut artifact of "complete" HEPDATA
+  mutate(site.name = as.character(site.name)) %>%
+  filter(peakactvnsts > 0, year >= 1990)  %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name) %>% 
+  group_by(species, spp.name, year) %>% 
+  summarise(total.nests = sum(peakactvnsts),
+            total.colonies = n()) %>% 
   ungroup() %>% 
-  left_join(., dplyr::select(hep_sites, parent.code, parent.site.name)) 
+  pivot_longer(cols = c(total.nests, total.colonies))
 
-hep_changes_rain <- left_join(hep_changes, birdyear_rain) %>% 
-  filter(!is.na(per.change.1year)) %>% 
-  distinct()
 
 # annual mean percent change in colony size
-ann_change_study_area <- hep_changes_rain %>% 
+ann_change_study_area <- hep_changes %>% 
+  filter(!is.na(per.change.1year)) %>% 
   group_by(year, species, spp.name) %>% 
   summarise(mean.per.change = mean(per.change.1year),
             num.colonies = n(),
             se.percent.change = sd(per.change.1year)/sqrt(num.colonies)) %>% 
   ungroup()
+```
 
 
+```{r}
 
-ann_change_plot <- ann_change_study_area  %>% 
-  filter(species == "GREG") %>% 
-  mutate(spp.name = factor(spp.name, levels = levels(core4spp))) %>% 
+annual_colony_plotter <- function(zspecies) {
+  zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
+                   zspecies == "CAEG" ~ brewer.pal(8, "Dark2")[2],
+                   zspecies == "GBHE" ~ brewer.pal(8, "Dark2")[3],
+                   zspecies == "GREG" ~ brewer.pal(8, "Dark2")[4],
+                   zspecies == "SNEG" ~ brewer.pal(8, "Dark2")[5],
+                   zspecies == "All" ~ brewer.pal(8, "Dark2")[6])
+  
+
+ann_nests_colonies <- annual_nests_colonies  %>% 
+  filter(species == zspecies)
+  
+ztitle <- paste("Number of", distinct(ann_nests_colonies, spp.name)$spp.name, "nests and colonies.")
+
+  
+ann_colony_plot <- ann_nests_colonies %>% 
+  mutate(data.type = ifelse(grepl("colonies", name), "Total colonies", "Total nests")) %>% 
 ggplot() +
-  geom_point(aes(year, mean.per.change, color = spp.name,
+  geom_point(aes(year, value,
+                 text = paste(year, "\n",
+                              data.type, ": ", value, sep = ""), color = zcolor)) +
+  geom_line(aes(year, value), color = zcolor) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ylab("") +
+  ggtitle(ztitle) +
+  theme(plot.margin = margin(t = 15)) + 
+  facet_wrap(~data.type, scales = "free")
+
+ggplotly(ann_colony_plot, tooltip = "text")
+}
+
+#annual_colony_plotter("GREG")  
+```
+
+```{r}
+
+annual_change_plotter <- function(zspecies) {
+  zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
+                   zspecies == "CAEG" ~ brewer.pal(8, "Dark2")[2],
+                   zspecies == "GBHE" ~ brewer.pal(8, "Dark2")[3],
+                   zspecies == "GREG" ~ brewer.pal(8, "Dark2")[4],
+                   zspecies == "SNEG" ~ brewer.pal(8, "Dark2")[5],
+                   zspecies == "All" ~ brewer.pal(8, "Dark2")[6])
+  
+
+ann_change <- ann_change_study_area  %>% 
+  filter(species == zspecies)
+  
+ztitle <- paste("Average % change in number of nests across\nall", distinct(ann_change, spp.name)$spp.name, "colonies.")
+
+  
+ann_change_plot <- ann_change %>% 
+ggplot() +
+  geom_point(aes(year, mean.per.change,
                  text = paste(year, "\n",
                                   "% change from last year: ", round(mean.per.change, 1),  "\n",
-                                  "# active colonies: ", num.colonies))) +
-  geom_line(aes(year, mean.per.change, color = spp.name)) +
-  geom_errorbar(aes(x = year, ymin = mean.per.change - se.percent.change, ymax = mean.per.change + se.percent.change, color = spp.name)) +
-  scale_color_manual(values = core4spp_colors) +
+                                  "# active colonies: ", num.colonies)), color = zcolor) +
+  geom_line(aes(year, mean.per.change), color = zcolor) +
+  geom_errorbar(aes(x = year, ymin = mean.per.change - se.percent.change, ymax = mean.per.change + se.percent.change), color = zcolor) +
+  #scale_color_manual(values = core4spp_colors) +
   geom_hline(yintercept = 0) +
   theme_bw() +
   theme(legend.position = "none") +
   ylab("") +
-  ggtitle("Average % change in colony size")
+  ggtitle(ztitle) +
+  theme(plot.margin = margin(t = 15))
 
 ggplotly(ann_change_plot, tooltip = "text")
-
+}
 
 ```
 
 ```{r}
 
-zspecies = "GREG"
 
+hep_report_year_spp_mapper <- function(zspecies, report.year) {
 zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
                    zspecies == "CAEG" ~ brewer.pal(8, "Dark2")[2],
                    zspecies == "GBHE" ~ brewer.pal(8, "Dark2")[3],
@@ -129,9 +178,9 @@ zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
                    zspecies == "All" ~ brewer.pal(8, "Dark2")[6])
 
 
-spp_report_year <- hep_changes_rain  %>% 
-  filter(species == zspecies, year == report.year) %>% 
-  left_join(., parent_sites)
+spp_report_year <- hep_changes  %>% 
+  filter(year == report.year, species == zspecies) %>% 
+  left_join(., data.frame(parent_sites_dd))
 
 spp_report_year_utm <- SpatialPointsDataFrame(coords = cbind(spp_report_year$utmeast, spp_report_year$utmnorth), data = spp_report_year, proj4string = CRS("+proj=utm +zone=10 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"))
 
@@ -141,53 +190,9 @@ spp_report_year_dd_df <- data.frame(spp_report_year_dd) %>%
   mutate(direction.change = case_when(per.change.1year > 0 ~ 1,
                                       per.change.1year == 0 ~ 2,
                                       per.change.1year < 0 ~ 3),
-         direction.change.text = case_when(per.change.1year > 0 ~ "Increase",
-                                      per.change.1year == 0 ~ "No change",
-                                      per.change.1year < 0 ~ "Decrease"),
          abs.change = abs(per.change.1year),
          per.change.1year = round(per.change.1year, 1)) %>% 
   filter(!zero2zero)
-
-# mean(parent_sites_dd@coords[,1])
-# mean(parent_sites_dd@coords[,2])
-
-# parent_sites_dd@bbox
-
-
-```
-<br>
-2019 colonies
-<br>
-```{r}
-
-
-
-hep.center <- c(left = -122.9409, bottom = 37.8261, right = -121.79534, top = 38.62336)
-hep.terrain.map <- get_stamenmap(hep.center, maptype = "terrain-background", zoom = 9, color="bw")
-
-sp_map <- ggmap(hep.terrain.map) +
-  geom_point(aes(lon, lat, shape = direction.change.text, size = abs.change,
-                     text = paste(parent.site.name, "\n",
-                                  "% change from last year: ", per.change.1year,  "\n",
-                                  "# nests this year: ", peakactvnsts,"\n",
-                                  "# nests last year: ", prev.yr.nsts)),
-                data = spp_report_year_dd_df, color = zcolor) +
-  theme(legend.position = "none") +
-  ylab("") +
-  xlab("")
-
-ggplotly(sp_map, tooltip = "text")%>% 
-  layout(legend=list(orientation = "v",x = 0.5, y = .5))
-
-
-```
-
-
-
-
-```{r}
-
-
 
 labs <- lapply(seq(nrow(spp_report_year_dd_df)), function(i) {
   paste0( '<p>', spp_report_year_dd_df[i, "parent.site.name"], '<p></p>', 
@@ -219,7 +224,7 @@ pchIcons = function(pch = 1, width = 30, height = 30, bg = "transparent", col = 
 
 
 
-shapes = c(1, 0, 2) # base R plotting symbols (http://www.statmethods.net/advgraphs/parameters.html)
+shapes = c(2, 1, 6) # base R plotting symbols (http://www.statmethods.net/advgraphs/parameters.html)
 iconFiles = pchIcons(shapes, 20, 20, col = c(zcolor, zcolor, zcolor), lwd = 4)
 
 
@@ -232,30 +237,258 @@ addLayersControl(baseGroups = c("World Imagery", "Toner Lite")) %>%
     data = spp_report_year_dd_df,
     icon = ~ icons(
       iconUrl = iconFiles[direction.change],
+      iconWidth = log(spp_report_year_dd_df$abs.change) * 10, 
+      iconHeight =  log(spp_report_year_dd_df$abs.change) * 10, 
       popupAnchorX = 20, popupAnchorY = 0
     ),
-    label=lapply(labs, htmltools::HTML)
+    label=lapply(labs, htmltools::HTML),
+    labelOptions = labelOptions(textsize = "15px")
   )%>%
 addMiniMap(
     toggleDisplay = TRUE,
     tiles = providers$Stamen.TonerLite
-    )
+    ) %>% 
+  setView(lat = max(spp_report_year_dd_df$lat) - ((max(spp_report_year_dd_df$lat) - min(spp_report_year_dd_df$lat))/2), 
+          lng = max(spp_report_year_dd_df$lon) - ((max(spp_report_year_dd_df$lon) - min(spp_report_year_dd_df$lon))/2), zoom = 8.5)
+
+}
 
 
-spp_report_year_dd_df %>%
-leaflet() %>%
-addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") %>%
-addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") %>%
-addLayersControl(baseGroups = c("World Imagery", "Toner Lite")) %>%
-addCircleMarkers(label = lapply(labs, htmltools::HTML),
-           radius = ~log(abs.change + 1 + 1),
-           color = ~zcolor,
-           labelOptions = labelOptions(textsize = "15px")) %>%
-setView(lat = 38.27, lng = -122.3, zoom = 9) %>%
-addMiniMap(
-    toggleDisplay = TRUE,
-    tiles = providers$Stamen.TonerLite
-    )
+
+```
+
+```{r}
+
+prev.year = report.year-1
+
+report_year_annual_change <- ann_change_study_area %>% 
+  filter(year == report.year) %>% 
+  mutate(annual.change.text = case_when(mean.per.change < 0 ~ paste("On average, the number of nests in ", spp.name, " colonies decreased from ", prev.year, " by ", round(abs(mean.per.change), 1), "%.", sep = ""),
+                                  mean.per.change > 0 ~ paste("On average, the number of nests in ", spp.name, " colonies increased by ", round(abs(mean.per.change), 1), "% from ", prev.year, ".", sep = "")))
+
+report_year_num_nests <- hep_changes %>% 
+  filter(year == report.year, peakactvnsts > 0) %>% 
+  group_by(species, spp.name) %>% 
+  summarise(total.nests = sum(peakactvnsts),
+            total.colonies = n()) %>% 
+  mutate(nest.text = ifelse(total.nests == 1, "nest", "nests"),
+         colony.text = ifelse(total.colonies == 1, "colony", "colonies"),
+         summary.text = paste("In ", report.year, ", we counted ", total.nests, " ", spp.name, " ", nest.text, " in ", total.colonies, " active ", colony.text, ".", sep = ""))
+
+report_year_up_down <- hep_changes %>% 
+  filter(year == report.year, consec.yrs, !zero2zero) %>% 
+  mutate(up.down = case_when(per.change.1year > 0 ~ "up",
+                                      per.change.1year == 0 ~ "flat",
+                                      per.change.1year < 0 ~ "down")) %>% 
+  group_by(species, spp.name, up.down)  %>% 
+  summarise(num.up.down = n()) %>% 
+  ungroup() %>% 
+  pivot_wider(id_cols = c(spp.name, species), names_from = up.down, values_from = num.up.down) %>% 
+  mutate_all(funs(replace_na(.,0))) %>% 
+  data.frame() %>% 
+  mutate(up.text = ifelse(up == 1, "colony", "colonies"),
+         down.text = ifelse(down == 1, "colony", "colonies"),
+         flat.text = ifelse(flat == 1, "colony", "colonies"),
+         up.down.text = paste("In ", report.year, ", ", up, " ", spp.name, " ", up.text, " increased in size, ",
+                              down, " ", down.text, " decreased, and ", 
+                              flat, " ", flat.text, " remained the same size.", sep = ""))
+
+
+# ---
+report_year_zero2some <- hep_changes %>% 
+  filter(year == report.year, !is.na(peakactvnsts), zero2some) %>% 
+  left_join(parent_sites) %>% 
+  group_by(species, spp.name) %>% 
+  summarise(col.names = paste(parent.site.name, collapse="; "),
+            num.cols = n()) %>% 
+  mutate(col.text = ifelse(num.cols == 1, "colony", "colonies"),
+         zero2some.text = paste(spp.name,  "s nested in ", num.cols, " ", col.text, " where they did not nest in ", prev.year, " (", col.names, ").", sep = ""))
+  
+
+report_year_some2zero <- hep_changes %>% 
+  filter(year == report.year, peakactvnsts == 0, prev.yr.nsts > 0) %>% 
+  left_join(parent_sites) %>% 
+  group_by(species, spp.name) %>% 
+  summarise(col.names = paste(parent.site.name, collapse="; "),
+            num.cols = n()) %>% 
+  mutate(col.text = ifelse(num.cols == 1, "colony", "colonies"),
+         some2zero.text = paste("There were ", num.cols, " active ", spp.name, " ", col.text, " in ", prev.year, " that had zero nests in ", report.year, " (", col.names, ").", sep = ""))
+
+
+# ---
+annual_change_texter <- function(zspecies) {
+  paste(filter(report_year_num_nests, species == zspecies)$summary.text, filter(report_year_annual_change, species == zspecies)$annual.change.text)
+}
+
+
+
+
+new_colony_texter <- function(zspecies) {
+  if(nrow(filter(report_year_zero2some, species == zspecies)) == 0) {
+    ""
+  } else {
+  filter(report_year_zero2some, species == zspecies)$zero2some.text
+  }
+}
+
+abandoned_colony_texter <-function(zspecies) {
+  if(nrow(filter(report_year_some2zero, species == zspecies)) == 0) {
+    ""
+  } else {
+  filter(report_year_some2zero, species == zspecies)$some2zero.text
+  }
+}
+
+
+map_texter <- function(zspecies) {
+  paste(filter(report_year_up_down, species == zspecies)$up.down.text,
+        new_colony_texter(zspecies),
+        abandoned_colony_texter(zspecies), sep = "")
+}
+
+```
+
+## How are the egrets doing? {.tabset .tabset-fade}
+
+Herons and Egrets are charismatic symbols of wetlands, and they play important roles in how wetlands and other ecosystems function. Tracking the number of herons and egrets in an area can give us a window into the health of the local environment.
+
+Every year since 1989, a dedicated crew of volunteers has fanned out over the northern San Francisco Bay Area to monitor nesting herons and egrets. They count how many nests are in each colony, and estimate the number of young produced in each nest. Long term monitoring projects like this help use understand how ecosystems change over time as humans continue to alter the landscape and climate continues to warm.
+
+
+Because colonies may vary in size from a few nests to over 100 nests, the best way to represent changes in the number of nests is the percent change in size of each colony. For example, if a colony had 10 nests last year and 15 nests this year, then that would be a 50% increase, and if a colony with 100 nests added those same 5 nests, then that would be a 5% increase. When we average this percent change across all colonies, we can estimate whether the overall breeding population of that species increased (average % change above 0) or decreased (average % change below 0) from last year.
+
+
+### Great Egret
+ 
+
+
+<br>
+
+`r annual_change_texter("GREG")` Overall, Great Egret colonies have increased in size during most of this monitoring project. This suggests that the local population of Great Egrets is increasing.
+```{r}
+
+annual_change_plotter("GREG")
+```
+
+<br>
+
+`r map_texter("GREG")`
+```{r}
+hep_report_year_spp_mapper("GREG", report.year)
+```
+
+
+
+
+### Great Blue Heron
+ 
+
+
+<br>
+
+`r annual_change_texter("GBHE")` Overall, the number of nests in Great Blue Heron colonies has increased on average over the last several years, although often not by very much. This suggests that the local Great Blue Heron population is generally stable.
+```{r}
+
+annual_change_plotter("GBHE")
+```
+
+<br>
+
+`r map_texter("GBHE")`
+```{r}
+hep_report_year_spp_mapper("GBHE", report.year)
+```
+
+### Snowy Egret
+ 
+
+
+<br>
+
+`r annual_change_texter("SNEG")`The number of nests in Snowy Egret colonies has generally been stable during our monitoring project, suggesting an overall stable population. However, there have been occasional single year spikes in colony growth, which we don't yet fully understand.
+```{r}
+
+annual_change_plotter("SNEG")
+```
+
+<br>
+
+`r map_texter("SNEG")`
+```{r}
+hep_report_year_spp_mapper("SNEG", report.year)
+```
+
+### Black-crowned Night-Heron
+ 
+
+
+<br>
+
+`r annual_change_texter("BCNH")` Overall, the number of nests in Black-crowned Night-Heron colonies tends to increase and decrease more than the other species we monitor. This means that although the population appears generally stable over the long term, there can be dramati changes in the number of nesting birds from one year to the next.
+```{r}
+
+annual_change_plotter("BCNH")
+```
+
+<br>
+
+`r map_texter("BCNH")`
+```{r}
+hep_report_year_spp_mapper("BCNH", report.year)
+```
+
+
+##  
+On this map, upward-pointing triangles indicate colonies that grew in size from  `r report.year` to `r prev.year`, downward triangles represent colonies that shrank, and circles represent no change. The size of the triangle represents how much the colony changed. You can zoom in and pan, and hover over each colony to get more information.
+
+```{r}
+
+
+
+#hep.center <- c(left = -122.9409, bottom = 37.8261, right = -121.79534, top = 38.62336)
+#hep.terrain.map <- get_stamenmap(hep.center, maptype = "terrain-background", zoom = 9, color="bw")
+
+#sp_map <- ggmap(hep.terrain.map) +
+#  geom_point(aes(lon, lat, shape = direction.change.text, size = abs.change,
+#                     text = paste(parent.site.name, "\n",
+#                                  "% change from last year: ", per.change.1year,  "\n",
+#                                  "# nests this year: ", peakactvnsts,"\n",
+#                                  "# nests last year: ", prev.yr.nsts)),
+#                data = spp_report_year_dd_df, color = zcolor) +
+#  theme(legend.position = "none") +
+#  ylab("") +
+#  xlab("")
+
+#ggplotly(sp_map, tooltip = "text")%>% 
+#  layout(legend=list(orientation = "v",x = 0.5, y = .5))
+
+
+```
+
+
+
+
+```{r}
+
+
+
+
+#---
+
+#spp_report_year_dd_df %>%
+#leaflet() %>%
+#addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") %>%
+#addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") %>%
+#addLayersControl(baseGroups = c("World Imagery", "Toner Lite")) %>%
+#addCircleMarkers(label = lapply(labs, htmltools::HTML),
+#           radius = ~log(abs.change + 1 + 1),
+#           color = ~zcolor,
+#           labelOptions = labelOptions(textsize = "15px")) %>%
+#setView(lat = 38.27, lng = -122.3, zoom = 9) %>%
+#addMiniMap(
+#    toggleDisplay = TRUE,
+#    tiles = providers$Stamen.TonerLite
+#    )
 
 
 
