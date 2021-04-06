@@ -64,7 +64,9 @@ suisun_survey_tides2 <- suisun_survey_tides %>%
   mutate(hour = hour(Date.Time),
          year = year(Date.Time))
 
+
 # most surveys (10 of 17) have been done on days with a ≥ 3 foot high tide occurring 0900-1200. This seems to provide a water level ≥ 2 feet by the usual 0800 launch time.
+
 
 suisun_survey_tides2 %>% 
   #filter(year > 2010) %>% 
