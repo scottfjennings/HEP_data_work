@@ -7,9 +7,12 @@
 library(tidyverse)
 library(RColorBrewer)
 library(RODBC)
+library(devtools)
 options(scipen = 999)
 source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
-source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+# source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+source_url("https://raw.githubusercontent.com/scottfjennings/HEP_data_work/master/HEP_code/HEP_utility_functions.R")
+
 # source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_data_summary_functions.R")
 
 # 2 data ----
@@ -22,10 +25,10 @@ hep_sites <- hep_sites_from_access(hepdata_location)
 
 hep <- hep_start %>% 
   clean_hep() %>% 
-  filter(peakactvnsts >= 0) %>% 
-  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% 
-  trim_hep_columns() %>% 
-  cut_never_nested() %>% 
+  filter(peakactvnsts >= 0) %>% # remove "no data" records
+  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # add human readable colony names
+  trim_hep_columns() %>% # remove set blocks of columns
+  cut_never_nested() %>% # remove all records for colony X species that were never really active _ cut artifact of "complete" HEPDATA
   mutate(site.name = as.character(site.name))
   
 
@@ -34,16 +37,24 @@ hep <- hep_start %>%
 ### run to here for start
 
 
-# 2.1 data checking ----
+# data checking ----
 foo <- data.frame(table(hep$site_name, hep$year, hep$species)) %>% 
   rename(site = 1, year = 2, species = 3) %>% 
   mutate(year = as.numeric(as.character(year)))
 foo_wide <- foo %>% 
   spread(year, Freq) 
 
-write.csv(foo_wide, "colony_year_spp.csv", row.names = F)
+#write.csv(foo_wide, "colony_year_spp.csv", row.names = F)
 
-# 2.2 number of colonies surveyed each year ----
+# number of years each colony had >0 nests
+years_active <- hep %>% 
+  filter(peakactvnsts > 0) %>% 
+  group_by(species, parent.site.name) %>% 
+  summarise(num.yrs.active = n()) %>% 
+  arrange(species, -num.yrs.active)
+#
+# number of colonies surveyed each year ----
+make_num_colonies_per_year <- function() {
 num_colonies_sp_yr <- hep %>% 
   filter(species != "DCCO", peakactvnsts > 0)  %>%  
   select(year, parent.code, species) %>%  
@@ -77,8 +88,9 @@ active_colonies_yr <- hep %>%
 
 num_colonies2 <- full_join(num_colonies_wide, num_colonies_yr) %>% 
   full_join(., active_colonies_yr)
-
-# 2.2.1 plot number_of_colonies_surveyed per year ----
+}
+num_colonies_sp_yr <- make_num_colonies_per_year()
+# plot number_of_colonies_surveyed per year ----
 ggplot(data = num_colonies_sp_yr) + 
   geom_point(aes(x = year, y = num.colonies.spp, color = species)) +
   geom_line(aes(x = year, y = num.colonies.spp, color = species)) +
@@ -92,6 +104,7 @@ ggsave("figures_output/number_of_colonies_surveyed.jpg", width = 6, height = 4, 
 
 
 # number of nests per species per year, all colonies combined -----
+make_total_num_nests <- function(){
   num_nests_yr_spp <- hep %>% 
   filter(species != "DCCO") %>% 
   group_by(species, year) %>% 
@@ -109,9 +122,10 @@ num_nests_yr_spp %>%
   geom_point(aes(x = year, y = tot.peakactvnsts)) +
   geom_smooth(aes(x = year, y = tot.peakactvnsts)) +
   facet_wrap(~species)
+}
+num_nests_yr_spp <- make_total_num_nests()
 
-
-# number of nests, scaled by number of colonies surveyed (mean # nests per colony)
+# number of nests, scaled by number of colonies surveyed (mean # nests per colony) ----
 
 nests_colonies <- full_join(num_nests_yr_spp, num_colonies_sp_yr) %>% 
   mutate(scaled.num.nests = tot.peakactvnsts/num.colonies.spp)
@@ -138,7 +152,7 @@ nests_colonies %>%
   ggtitle("ACR colony monitoring data") +
     theme(plot.margin = unit(c(1,1,1,1), "cm"))
 
-ggsave("figures_output/GBHE_GREG_SNEG_trends.png", width = 10, height = 6)
+#ggsave("figures_output/GBHE_GREG_SNEG_trends.png", width = 10, height = 6)
 
 
 # nest survival ----
@@ -160,9 +174,19 @@ hep  %>%
 
 hep_changes <- hep %>% 
   hep_annual_changer() %>% 
-  filter(!is.na(prev.yr.nsts), zero2zero == 0) %>% 
+  filter(!is.na(prev.yr.nsts), zero2zero == 0, zero2some == 0, year >= 1990) %>% 
   bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
   rename(species = alpha.code, spp.name = common.name)
+
+hep_changes %>% 
+  full_join(years_active) %>% 
+  filter(species %in% zsppz, subregion == "OUC", num.yrs.active > 10) %>% 
+ggplot() +
+  geom_point(aes(x = year, y = per.change.1year, color = parent.site.name)) +
+  geom_line(aes(x = year, y = per.change.1year, color = parent.site.name)) +
+  stat_smooth(aes(x = year, y = per.change.1year)) +
+  facet_wrap(~species, scales = "free")
+
 
 change_resids <- hep_changes %>% 
   group_by(species, year) %>% 
@@ -285,7 +309,7 @@ zgroupz <- c(list(c("year")), list(c("year", "subreg.name")))
 zspp_zgroup <- expand.grid(zspp = zsppz, zgroup = zgroupz)
 
 
-zplot = per_change_plotter(zspp = "GREG", zgroup = c("year"), save.plot = F, spp.color = F)
+zplot = per_change_plotter(zspp = "GREG", zgroup = c("year"), save.plot = F, spp.color = T)
 
 zplot = zplot +
   ylab("") +
@@ -376,7 +400,7 @@ zgroupz <- c(list(c("year")), list(c("year", "subreg.name")))
 zspp_zgroup <- expand.grid(zspp = zsppz, zgroup = zgroupz)
 
 
-abs_change_plotter(zspp = "GREG", zgroup = c("year"), save.plot = FALSE)
+abs_change_plotter(zspp = "GBHE", zgroup = c("year"), save.plot = FALSE)
 
 map2(zspp_zgroup$zspp, zspp_zgroup$zgroup, abs_change_plotter)
 
