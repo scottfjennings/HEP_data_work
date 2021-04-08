@@ -10,20 +10,6 @@ library(RODBC)
 library(devtools)
 library(plotly)
 
-devtools::install_github("troyhill/VulnToolkit")
-
-library(VulnToolkit)
-options(scipen = 999)
-source_url("https://raw.githubusercontent.com/scottfjennings/HEP_data_work/master/HEP_code/HEP_utility_functions.R")
-
-
-# generate a list of relevant stations
-d <- noaa.stations() 
-
-# download data using noaa.stations() result
-highlow <- noaa(station = 9415402, begindate = 20130101)  
-
-
 
 
 hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
