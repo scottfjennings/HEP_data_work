@@ -88,4 +88,4 @@ filter(hep, code %in% c(32.0, 32.1, 50.0, 50.1, 50.2, 50.3, 83.0, 114.0, 119.0, 
   ggtitle("Number of GREG nests at Tomales Bay colonies") +
   ylab("Number of nests")
 
-
+ggsave("figures_output/tomales_bay_nest_abundance.png", width = 12, height = 8)
