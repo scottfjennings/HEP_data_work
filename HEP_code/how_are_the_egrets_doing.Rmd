@@ -237,8 +237,10 @@ addLayersControl(baseGroups = c("World Imagery", "Toner Lite")) %>%
     data = spp_report_year_dd_df,
     icon = ~ icons(
       iconUrl = iconFiles[direction.change],
-      iconWidth = log(spp_report_year_dd_df$abs.change) * 10, 
-      iconHeight =  log(spp_report_year_dd_df$abs.change) * 10, 
+      #iconWidth = log(spp_report_year_dd_df$abs.change) * 10, 
+      #iconHeight =  log(spp_report_year_dd_df$abs.change) * 10, 
+      iconWidth = spp_report_year_dd_df$abs.change.1year, 
+      iconHeight =  spp_report_year_dd_df$abs.change.1year, 
       popupAnchorX = 20, popupAnchorY = 0
     ),
     label=lapply(labs, htmltools::HTML),
