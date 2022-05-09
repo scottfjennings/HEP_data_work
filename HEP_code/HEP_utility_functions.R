@@ -1,8 +1,11 @@
 
 # a basic starting workflow for HEP data looks like this
 
+library(tidyverse)
+library(readr)
 library(RODBC)
-
+library(here)
+library(RColorBrewer)
 
 #hep <- hep_from_access() %>% 
 #  clean_hep() %>% 
@@ -55,9 +58,17 @@ out_table <- out_table  # %>%
 return(out_table)
 }
 
-# hep_start <- hep_from_access(hepdata_location)
 
+# hepdata_location = here("HEP_data/HEPDATA.accdb")
+
+# hep_start <- hep_from_access(hepdata_location)
+# names(hep_start) %>% data.frame() %>% saveRDS("HEP_data/HEPDATA_names")
 # hep_sites <- hep_sites_from_access(hepdata_location)
+
+# hep_sites_from_access(hepdata_location) %>% select(code, site.name, utmnorth, utmeast) %>% saveRDS("HEP_data/HEP_site_names_nums_utm")
+
+
+
 
 # 2 data management functions ----
 
@@ -85,7 +96,7 @@ hep_species_order <- data.frame(species = c("GREG", "GBHE", "BCNH", "SNEG", "CAE
 
   spp_color_name = data.frame(species = c("BCNH", "CAEG", "GBHE", "GREG", "SNEG", "All", "DCCO"),
                     spp.color = c(brewer.pal(8, "Dark2")[1], brewer.pal(8, "Dark2")[2], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[6], brewer.pal(8, "Dark2")[7]),
-                    spp.name = c("Black-crowned Night-heron", "Cattle Egret", "Great Blue Heron", "Great Egret", "Snowy Egret", "All", "Double-crested Cormorant")) %>% 
+                    spp.name = c("Black-crowned Night-Heron", "Cattle Egret", "Great Blue Heron", "Great Egret", "Snowy Egret", "All", "Double-crested Cormorant")) %>% 
   mutate(spp.name = factor(spp.name, levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron", "Cattle Egret", "Double-crested Cormorant", "All")))
 
 core4spp <- factor(c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"), levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"))
@@ -113,14 +124,15 @@ hep <- left_join(hep, dplyr::select(hep_sites, code, parent.code, site.name, par
 cut_never_nested <- function(hep){
   # input df must be the outpout of clean_hep()
   # should not change number of columns, should cut number of rows
-hep_no_never_nested <- hep %>% 
+hep_no_never_nested <- hep %>%
+  filter(peakactvnsts >= 0) %>% 
   group_by(code, species) %>% 
   summarise(mean.peakactvnsts = mean(peakactvnsts)) %>% 
   filter(mean.peakactvnsts > 0) %>% 
   mutate(actv.gr.eq.1yr = 1) %>% 
   full_join(., hep, by = c("code", "species")) %>% 
   filter(actv.gr.eq.1yr == 1) %>% 
-  arrange(parent.site.name, species, year) %>% 
+  arrange(code, species, year) %>% 
   ungroup() %>% 
   select(-mean.peakactvnsts, -actv.gr.eq.1yr)  %>% 
     ungroup()
