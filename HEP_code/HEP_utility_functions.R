@@ -32,6 +32,14 @@ out_table <- sqlFetch(con2, "tbl_HEPDATA")
  
 close(con2)
 
+out_table <- out_table %>% 
+  mutate(across(everything(), ~as.character(.)),
+         across(contains("DATE"), ~as.POSIXct(.)),
+         across(matches("RESULT|NESTING|STAGE|BRD|YEAR|CODE"), ~as.numeric(.)),
+         across(contains("TYPE"), ~as.character(.)),
+         across(c("PEAKRICHNESS", "TOTALSPECIES", "NUMBERVISITS", "TOTALHOURS", "PEAKACTVNSTS", "INDIVIDUALS", "FOCALNESTS", "FOCFAILURE"), ~as.numeric(.)))
+
+
 return(out_table)
 }
 
@@ -72,6 +80,33 @@ return(out_table)
 
 # 2 data management functions ----
 
+
+#' Append as_HEPDATA files
+#' 
+#' Append as_HEPDATA files created by the rawhep_to_HEPDATA workflow to a dataframe exported from HEPDATA 
+#'
+#' @param hep_start data frame output from hep_from_access
+#' @param as_HEPDATA_location location where as_HEPDATA files are stored. Currently "C:/Users/scott.jennings/Documents/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA"
+#'
+#' @return data frame 
+#' @export
+#'
+#' @examples
+append_as_hepdata <- function(hep_start, as_HEPDATA_location = "C:/Users/scott.jennings/Documents/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA") {
+as_HEPDATA_files <- list.files(as_HEPDATA_location, full.names = TRUE)
+
+# RDS and .csv versions are saved, we just want the RDS files
+as_HEPDATA_files <- as_HEPDATA_files[!grepl(".csv", as_HEPDATA_files)]  
+
+as_HEPDATA <- map_df(as_HEPDATA_files[2], readRDS) %>% 
+  mutate(across(contains("DATE"), ~as.POSIXct(.)),
+         across(matches("RESULT|NESTING|STAGE|BRD|YEAR|CODE"), ~as.numeric(.)),
+         across(contains("TYPE"), ~as.character(.)),
+         across(c(PEAKRICHNESS, TOTALSPECIES, NUMBERVISITS, TOTALHOURS, PEAKACTVNSTS, INDIVIDUALS, FOCALNESTS, FOCFAILURE), ~as.numeric(.)))
+
+combined_hep <- bind_rows(hep_start, as_HEPDATA)
+return(combined_hep)
+}
 # clean_hep(); fix a few data problems ----
 clean_hep <- function(hep) { 
   # this function needs to be run first !!!!!
