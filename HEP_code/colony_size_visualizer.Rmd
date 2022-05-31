@@ -1,0 +1,299 @@
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.width=10, fig.height=6, fig.align = "left") 
+```
+
+
+
+```{r }
+
+
+library(tidyverse)
+library(devtools)
+library(RColorBrewer)
+library(here)
+library(plotly)
+
+options(scipen = 999)
+source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
+source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/numbers2words.R")
+source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+# source_url("https://raw.githubusercontent.com/scottfjennings/HEP_data_work/master/HEP_code/HEP_utility_functions.R")
+
+
+report.year = 2019
+
+```
+
+
+
+```{r }
+
+#  data ----
+
+hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+# all these functions are in HEP_utility_functions.R
+hep_start <- hep_from_access(hepdata_location)
+hep_sites <- hep_sites_from_access(hepdata_location) 
+parent_sites <- hep_sites %>% 
+  filter(!is.na(utmnorth), !is.na(utmeast), !is.na(parent.code)) %>% 
+  group_by(parent.code, parent.site.name) %>%
+  summarise(utmnorth = mean(utmnorth),
+            utmeast = mean(utmeast))
+
+
+
+hep_changes <- hep_start %>% 
+  clean_hep() %>% 
+  filter(peakactvnsts >= 0) %>% # remove "no data" records
+  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # add human readable colony names
+  trim_hep_columns() %>% # remove set blocks of columns
+  cut_never_nested() %>% # remove all records for colony X species that were never really active _ cut artifact of "complete" HEPDATA
+  mutate(site.name = as.character(site.name)) %>% 
+  hep_annual_changer() %>% 
+  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # add human readable colony names
+  filter(year >= 1990) %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name) %>% 
+  mutate(per.change.1year = ifelse(zero2zero, 0, per.change.1year),
+         per.change.1year = ifelse(zero2some, abs.change.1year * 100, per.change.1year)) %>% 
+  distinct()
+
+# number of nests and colonies each year
+annual_nests_colonies <- hep_start %>% 
+  clean_hep() %>% 
+  filter(peakactvnsts >= 0) %>% # remove "no data" records
+  left_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # add human readable colony names
+  trim_hep_columns() %>% # remove set blocks of columns
+  cut_never_nested() %>% # remove all records for colony X species that were never really active _ cut artifact of "complete" HEPDATA
+  mutate(site.name = as.character(site.name)) %>%
+  filter(peakactvnsts > 0, year >= 1990)  %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name) %>% 
+  group_by(species, spp.name, year) %>% 
+  summarise(total.nests = sum(peakactvnsts),
+            total.colonies = n(),
+            mean.nests.per.colony = mean(peakactvnsts)) %>% 
+  ungroup() %>% 
+  #mutate(nests.per.colony = total.nests/total.colonies) %>% 
+  pivot_longer(cols = c(total.nests, total.colonies, mean.nests.per.colony)) %>% 
+  mutate(data.type = case_when(name == "total.nests" ~ "Total nests monitored",
+                               name == "total.colonies" ~ "Total colonies monitored",
+                               name == "mean.nests.per.colony" ~ "Mean colony size"),
+         data.type = factor(data.type, levels = c("Total colonies monitored", "Total nests monitored", "Mean colony size")))
+
+
+
+# ----
+# annual mean percent change in colony size
+ann_change_study_area1 <- hep_changes %>% 
+  filter(!is.na(per.change.1year), zero2zero == FALSE) %>% 
+  group_by(year, species, spp.name) %>% 
+  mutate(tot.nests = sum(prev.yr.nsts),
+         colony.weight = prev.yr.nsts/tot.nests,
+         weighted.abs.change = abs.change.1year * colony.weight,
+         weighted.per.change = per.change.1year * colony.weight) 
+
+
+ann_change_study_area <- ann_change_study_area1 %>% 
+  filter(zero2some == FALSE) %>% 
+  summarise(year.weighted.abs.change = sum(weighted.abs.change*is.finite(weighted.abs.change),na.rm=TRUE),
+         year.weighted.per.change = sum(weighted.per.change*is.finite(weighted.per.change),na.rm=TRUE),
+         num.colonies = n(),
+         num.nests = sum(peakactvnsts),
+         mean.per.change = mean(per.change.1year),
+         absolute.change = sum(abs.change.1year)) %>% 
+  ungroup()  %>% 
+  pivot_longer(cols = contains("change"), names_to = "type.change", values_to = "amount.change") %>% 
+  mutate(change.group = case_when(type.change == "absolute.change" ~ "Absolute change in raw number of nests",
+                                  type.change == "mean.per.change" ~ "Mean percent change in number of nests",
+                                  type.change == "year.weighted.abs.change" ~ "Absolute change in raw number of nests\n(weighted by colony size)",
+                                  type.change == "year.weighted.per.change" ~ "Mean percent change in number of nests\n(weighted by colony size)"))
+
+
+
+```
+
+
+
+```{r }
+
+
+# function to make the figure
+nests_colonies_plotter <- function(zspecies) {
+  zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
+                   zspecies == "CAEG" ~ brewer.pal(8, "Dark2")[2],
+                   zspecies == "GBHE" ~ brewer.pal(8, "Dark2")[3],
+                   zspecies == "GREG" ~ brewer.pal(8, "Dark2")[4],
+                   zspecies == "SNEG" ~ brewer.pal(8, "Dark2")[5],
+                   zspecies == "All" ~ brewer.pal(8, "Dark2")[6])
+  
+
+  
+  
+nests_colonies <- annual_nests_colonies  %>% 
+  filter(species == zspecies)
+  
+  spp_title = distinct(nests_colonies, spp.name)$spp.name
+  
+nests_colonies_plot <- nests_colonies %>%  
+ggplot() +
+  geom_point(aes(year, value, 
+                 text = paste(year,  "\n",
+                              data.type, ": ", round(value, 1), sep = "")), color = zcolor) +
+  stat_smooth(aes(year, value), color = zcolor, se = FALSE) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ylab("") +
+  facet_wrap(~data.type, scales = "free") +
+  ggtitle(spp_title) +
+  #theme(strip.text.x = element_text(margin = margin(0.5, 0, 0, 0, "in"))) +
+  theme(plot.margin = margin(t = 15, r = 15)) 
+
+ggplotly(nests_colonies_plot, tooltip = "text")
+}
+
+
+
+
+```
+
+
+
+
+```{r }
+
+# function to make the figure
+annual_change_plotter <- function(zspecies) {
+  zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
+                   zspecies == "CAEG" ~ brewer.pal(8, "Dark2")[2],
+                   zspecies == "GBHE" ~ brewer.pal(8, "Dark2")[3],
+                   zspecies == "GREG" ~ brewer.pal(8, "Dark2")[4],
+                   zspecies == "SNEG" ~ brewer.pal(8, "Dark2")[5],
+                   zspecies == "All" ~ brewer.pal(8, "Dark2")[6])
+  
+
+ann_change <- ann_change_study_area  %>% 
+  filter(species == zspecies)
+  
+
+  spp_title = distinct(ann_change, spp.name)$spp.name
+  
+ann_change_plot <- ann_change %>%  
+ggplot() +
+#  geom_point(aes(year, mean.per.change,
+#                 text = paste(year,  "\n",
+#                              "# monitored colonies: ", num.colonies, "\n",
+#                              "% change from last year: ", round(mean.per.change, 1))), color = zcolor) +
+#  stat_smooth(aes(year, mean.per.change), color = zcolor, se = FALSE) +
+  geom_point(aes(year, amount.change, 
+                 text = paste(year,  "\n",
+                              "amount change: ", round(amount.change, 1), "\n",
+                              "# monitored colonies: ", num.colonies, "\n",
+                              "# monitored nests: ", num.nests)), color = zcolor) +
+  stat_smooth(aes(year, amount.change), color = zcolor, se = FALSE) +
+  #geom_line(aes(year, mean.per.change), color = zcolor) +
+  #geom_errorbar(aes(x = year, ymin = mean.per.change - se.percent.change, ymax = mean.per.change + se.percent.change), color = zcolor) +
+  #scale_color_manual(values = core4spp_colors) +
+  geom_hline(yintercept = 0) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ggtitle(spp_title)+
+  ylab("") +
+  facet_wrap(~change.group, scales = "free") +
+  theme(strip.text.x = element_text(margin = margin(0.5, 0, 0, 0, "in"))) +
+  theme(plot.margin = margin(t = 15)) 
+
+ggplotly(ann_change_plot, tooltip = "text")
+}
+
+```
+
+
+
+```{r }
+
+# function to make the figure
+annual_change_plotter <- function(zspecies) {
+  zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
+                   zspecies == "CAEG" ~ brewer.pal(8, "Dark2")[2],
+                   zspecies == "GBHE" ~ brewer.pal(8, "Dark2")[3],
+                   zspecies == "GREG" ~ brewer.pal(8, "Dark2")[4],
+                   zspecies == "SNEG" ~ brewer.pal(8, "Dark2")[5],
+                   zspecies == "All" ~ brewer.pal(8, "Dark2")[6])
+  
+
+spp_change <- hep_changes  %>% 
+  filter(species == zspecies)
+  
+
+  spp_title = distinct(spp_change, spp.name)$spp.name
+  
+spp_change_plot <- spp_change %>%  
+ggplot() +
+#  geom_point(aes(year, mean.per.change,
+#                 text = paste(year,  "\n",
+#                              "# monitored colonies: ", num.colonies, "\n",
+#                              "% change from last year: ", round(mean.per.change, 1))), color = zcolor) +
+#  stat_smooth(aes(year, mean.per.change), color = zcolor, se = FALSE) +
+  geom_point(aes(year, peakactvnsts, color = site.name, 
+                 text = paste(year, "\n",
+                              site.name, "\n",
+                              "# nests: ", peakactvnsts))) +
+  geom_line(aes(year, peakactvnsts, color = site.name), se = FALSE) +
+  #geom_line(aes(year, mean.per.change), color = zcolor) +
+  #geom_errorbar(aes(x = year, ymin = mean.per.change - se.percent.change, ymax = mean.per.change + se.percent.change), color = zcolor) +
+  #scale_color_manual(values = core4spp_colors) +
+  geom_hline(yintercept = 0) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ggtitle(spp_title)+
+  ylab("") 
+
+ggplotly(spp_change_plot, tooltip = "text")
+}
+
+```
+
+
+
+Raw numbers
+```{r }
+nests_colonies_plotter("GREG")
+```
+
+Changes in numbers
+```{r }
+annual_change_plotter("GREG")
+```
+
+Raw numbers
+```{r }
+nests_colonies_plotter("GBHE")
+```
+
+Changes in numbers
+```{r }
+annual_change_plotter("GBHE")
+```
+
+Raw numbers
+```{r }
+nests_colonies_plotter("SNEG")
+```
+
+Changes in numbers
+```{r }
+annual_change_plotter("SNEG")
+```
+
+Raw numbers
+```{r }
+nests_colonies_plotter("BCNH")
+```
+
+Changes in numbers
+```{r }
+annual_change_plotter("BCNH")
+```

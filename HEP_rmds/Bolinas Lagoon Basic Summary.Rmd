@@ -1,0 +1,167 @@
+---
+title: "Bolinas Lagoon Heron and Egret nesting summary"
+author: ""
+date: ""
+output: word_document
+---
+
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.width=10, fig.height=6, fig.align = "left") 
+```
+
+
+
+```{r }
+library(tidyverse)
+library(devtools)
+library(ggmap)
+library(RColorBrewer)
+library(colorspace)
+library(here)
+library(sp)
+library(plotly)
+library(leaflet)
+
+options(scipen = 999)
+source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
+source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/numbers2words.R")
+source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+# source_url("https://raw.githubusercontent.com/scottfjennings/HEP_data_work/master/HEP_code/HEP_utility_functions.R")
+
+
+report.year = 2019
+
+```
+
+
+
+```{r }
+#  data ----
+
+hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+# all these functions are in HEP_utility_functions.R
+ 
+
+hep_sites <- hep_sites_from_access(hepdata_location) %>% 
+  filter(code %in% c(1, 1.1, 53, 53.1)) %>% 
+  select(contains("code"), contains("site.name"), utmnorth, utmeast)
+
+hep_start <- hep_from_access(hepdata_location) 
+
+
+```
+
+```{r}
+
+sites_utm <- SpatialPointsDataFrame(coords = cbind(hep_sites$utmeast, hep_sites$utmnorth), data = hep_sites, proj4string = CRS("+proj=utm +zone=10 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"))
+sites_dd <- spTransform(sites_utm, CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+
+#sites_dd %>%
+#leaflet() %>%
+#addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") %>%
+#addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") %>%
+#addLayersControl(baseGroups = c("World Imagery", "Toner Lite")) %>%
+#  addCircleMarkers(stroke = FALSE, fillOpacity = 0.5)
+
+
+```
+
+
+```{r}
+
+nest_abund <- hep_start %>% 
+  clean_hep() %>% 
+  trim_hep_columns() %>% # remove set blocks of columns
+  cut_never_nested() %>% # remove all records for colony X species that were never really active _ cut artifact of "complete" HEPDATA
+  select(year, code, species, peakactvnsts, contains("brd")) %>% 
+  rbind(data.frame(species = rep(c("GREG", "GBHE", "DCCO"), 2),
+                   year = c(rep(2020, 3), rep(2021, 3)),
+                   peakactvnsts = c(15, 9, 12, 13, 9, 23),
+                   brd1 = c(5, 0, NA, NA, NA, NA),
+                   brd2 = c(5, 1, NA, NA, NA, NA),
+                   brd3 = c(1, 1, NA, NA, NA, NA),
+                   brd4 = c(NA, NA, NA, NA, NA, NA),
+                   brd5 = c(NA, NA, NA, NA, NA, NA),
+                   brd6 = c(NA, NA, NA, NA, NA, NA),
+                   code = 53.0)) %>% 
+  right_join(., hep_sites, by = c("code")) %>% 
+  mutate(site.name = as.character(site.name)) %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name)
+
+
+
+
+nest_abund %>% 
+  filter(!is.na(species)) %>% 
+  mutate(site.name = factor(site.name, levels = c("Picher Canyon", "Bolinas", "Kent Island"))) %>% 
+  ggplot() +
+  geom_line(aes(x = year, y = peakactvnsts, color = spp.name)) +
+  facet_wrap(~site.name, scales = "free_y", ncol = 1) +
+  theme_bw() +
+  theme(legend.title = element_blank()) +
+  ylab("Total nests") +
+  xlab("Year") +
+  ggtitle("Total number of nests at all Bolinas Lagoon colonies")
+
+
+```
+
+```{r}
+
+nest_surv <- hep_start %>% 
+  clean_hep() %>% 
+  trim_hep_columns() %>% # remove set blocks of columns
+  cut_never_nested() %>% 
+  right_join(., hep_sites, by = c("code")) %>% 
+  mutate(nest.surv = focfailure/focalnests) %>% 
+  mutate(site.name = as.character(site.name)) %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name)
+  
+
+
+nest_surv %>% 
+  filter(!is.na(species), species %in% c("GREG", "GBHE")) %>% 
+  mutate(site.name = factor(site.name, levels = c("Picher Canyon", "Bolinas", "Kent Island"))) %>% 
+  ggplot() +
+  geom_line(aes(x = year, y = nest.surv, color = spp.name)) +
+  facet_wrap(~site.name, scales = "free_y", ncol = 1) +
+  theme_bw() +
+  theme(legend.title = element_blank()) +
+  ylab("Average # chicks") +
+  xlab("Year") +
+  ggtitle("Estimated nest survival")
+```
+
+
+
+```{r}
+
+mean_brood_size <- hep_start %>% 
+  clean_hep() %>% 
+  trim_hep_columns() %>% # remove set blocks of columns
+  cut_never_nested() %>%
+  calc_mean_brood_size() %>% 
+  right_join(., hep_sites, by = c("code"))%>% 
+  mutate(site.name = as.character(site.name)) %>% 
+  bird_taxa_filter(drop_cols = c("species.number", "order", "family", "subfamily", "genus", "species")) %>% 
+  rename(species = alpha.code, spp.name = common.name)
+
+
+mean_brood_size %>% 
+  filter(!is.na(species), species %in% c("GREG", "GBHE")) %>% 
+  mutate(site.name = factor(site.name, levels = c("Picher Canyon", "Bolinas", "Kent Island"))) %>% 
+  ggplot() +
+  geom_line(aes(x = year, y = mean.brd.size, color = spp.name)) +
+  facet_wrap(~site.name, scales = "free_y", ncol = 1) +
+  theme_bw() +
+  theme(legend.title = element_blank()) +
+  ylab("Average # chicks") +
+  xlab("Year") +
+  ggtitle("Average number of chicks per nest")
+
+
+```
