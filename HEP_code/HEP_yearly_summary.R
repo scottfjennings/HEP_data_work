@@ -216,7 +216,41 @@ mean_change_resids <- change_resids %>%
   ungroup() %>% 
   arrange(subregion, species, abs.mean.change.resid) 
   
+# plot annual changes in number of nests and colonies
+annual_colony_plotter <- function(zspecies) {
+  zcolor = case_when(zspecies == "BCNH" ~ brewer.pal(8, "Dark2")[1],
+                   zspecies == "CAEG" ~ brewer.pal(8, "Dark2")[2],
+                   zspecies == "GBHE" ~ brewer.pal(8, "Dark2")[3],
+                   zspecies == "GREG" ~ brewer.pal(8, "Dark2")[4],
+                   zspecies == "SNEG" ~ brewer.pal(8, "Dark2")[5],
+                   zspecies == "All" ~ brewer.pal(8, "Dark2")[6])
+  
 
+ann_nests_colonies <- annual_nests_colonies  %>% 
+  filter(species == zspecies)
+  
+ztitle <- paste("Number of", distinct(ann_nests_colonies, spp.name)$spp.name, "nests and colonies.")
+
+  
+ann_colony_plot <- ann_nests_colonies %>% 
+  mutate(data.type = ifelse(grepl("colonies", name), "Total colonies", "Total nests")) %>% 
+ggplot() +
+  geom_point(aes(year, value,
+                 text = paste(year, "\n",
+                              data.type, ": ", value, sep = ""), color = zcolor)) +
+  geom_line(aes(year, value), color = zcolor) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ylab("") +
+  ggtitle(ztitle) +
+  theme(plot.margin = margin(t = 15)) + 
+  facet_wrap(~data.type, scales = "free")
+
+ggplotly(ann_colony_plot, tooltip = "text")
+}
+
+annual_colony_plotter("GREG")  
+ggsave(here("figures_output/greg_nests_colonies.png"))
 # plotting percent_change_colony_size -----
 per_change_plotter <- function(zspp, zgroup, save.plot = TRUE, spp.color = T) {
  # zspp = c("All", "BCNH", "CAEG", "GBHE", "GREG", "SNEG")
