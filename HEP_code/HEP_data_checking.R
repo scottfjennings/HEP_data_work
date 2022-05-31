@@ -5,8 +5,9 @@ library(RColorBrewer)
 library(RODBC)
 library(rgdal)
 library(sp)
+library(birdnames)
 options(scipen = 999)
-source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
+
 source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
 # source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_data_summary_functions.R")
 
@@ -18,7 +19,10 @@ hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work
 hep_start <- hep_from_access(hepdata_location)
 hep_sites <- hep_sites_from_access(hepdata_location)
 
-# export shapefile for colony locations
+#
+
+
+# export shapefile for colony locations ----
 hep_sites <- hep_sites %>% 
   filter(!is.na(utmnorth), !is.na(utmeast))
 hep_sites_utm <- SpatialPointsDataFrame(cbind(hep_sites$utmeast, hep_sites$utmnorth), proj4string = CRS("+proj=utm +zone=10 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"), data = hep_sites)
