@@ -11,7 +11,7 @@ library(devtools)
 library(plotly)
 
 
-
+# visualize tides on previous surveys ----
 hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # all these functions are in HEP_utility_functions.R
 hep_start <- hep_from_access(hepdata_location)
@@ -70,7 +70,7 @@ ggplot() +
 ggsave("figures_output/suisun_tides.png", width = 10)
 
 
-### -------
+# pick potential survey days for current year ----
 
 # get potential survey days for current year that fit best tide characteristics
 
