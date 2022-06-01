@@ -8,10 +8,9 @@ library(rgeos)
 
 
 options(scipen = 999)
-source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
-source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+source("C:/Users/scott.jennings/Documents/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
 
-hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+hepdata_location = "C:/Users/scott.jennings/Documents/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # all these functions are in HEP_utility_functions.R
 hep_sites <- hep_sites_from_access(hepdata_location)
  
@@ -41,10 +40,15 @@ write.csv(hep_parent_sites_dd_df, "HEP_data/hep_parent_sites_dd_df.csv", row.nam
 
 hep_prism_90_04 <- read.csv("HEP_data/hep_prism_data/PRISM_ppt_stable_4km_199001_200412.csv", skip = 10)
 hep_prism_05_19 <- read.csv("HEP_data/hep_prism_data/PRISM_ppt_stable_4km_200501_201912.csv", skip = 10)
+hep_prism_20_21 <- read.csv("HEP_data/hep_prism_data/PRISM_ppt_tmean_provisional_4km_202001_202112.csv", skip = 10)
 
-hep_prism <- rbind(hep_prism_90_04, hep_prism_05_19) %>% 
+hep_prism <- bind_rows(read.csv("HEP_data/hep_prism_data/PRISM_ppt_stable_4km_199001_200412.csv", skip = 10),
+                   read.csv("HEP_data/hep_prism_data/PRISM_ppt_stable_4km_200501_201912.csv", skip = 10),
+                   read.csv("HEP_data/hep_prism_data/PRISM_ppt_tmean_provisional_4km_202001_202112.csv", skip = 10)) %>% 
   separate(Date, c("year", "month"), sep = "-", remove = F) %>% 
   rename(rain.mm = ppt..mm.) %>% 
   select(parent.code = Name, year, month, rain.mm)
+
+summary(hep_prism)
 
 saveRDS(hep_prism, "HEP_data/hep_prism_data/hep_prism_combined")         
