@@ -169,7 +169,7 @@ hep_no_never_nested <- hep %>%
   filter(actv.gr.eq.1yr == 1) %>% 
   arrange(code, species, year) %>% 
   ungroup() %>% 
-  select(-mean.peakactvnsts, -actv.gr.eq.1yr)  %>% 
+  dplyr::select(-mean.peakactvnsts, -actv.gr.eq.1yr)  %>% 
     ungroup()
 }
 
