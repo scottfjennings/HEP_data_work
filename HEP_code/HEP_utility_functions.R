@@ -173,6 +173,34 @@ hep_no_never_nested <- hep %>%
     ungroup()
 }
 
+
+
+#' Cut leading and trailing zeros
+#' 
+#' Remove 0 records that exist in database before a species began nesting at a colony(ies) or after a species abandons a colony(ies).
+#'
+#' @param x field in data frame to check for 0s
+#'
+#' @return a new logical vector for TRUE if x is either > 0 or is the last leading 0 before x > 0 or is the first trailing 0 after x = 0
+#' @export
+#'
+#' @details currently keeps the last 0 before a species starts nesting and the last 0 after a species stops nesting. this is to that linear models (e.g. for trend estimates) fitted to the data will reflect that true 0 data. Cutting the other 0's prevents a long series of 0s from biasing these trend estimates. 
+#' 
+#' The data frame containing x can be grouped depending on what level you want to cut 0s  
+#'
+#' @examples 
+#' hep %>% 
+#' arrange(code, species, year) %>% 
+#' group_by(code, species) %>% 
+#' mutate(keep = cut_lead_trail_zeros(peakactvnsts))
+cut_lead_trail_zeros <- function(x) {
+ z = ifelse(x > 0 |
+           (cumsum(x) == 0 & lead(x > 0)) |
+           (rev(cumsum(rev(x))) == 0 & lag(x > 0)), TRUE, FALSE)
+ return(z)
+}
+
+
 # cut_leading_0s(); exclude 0s that exist in database before a species began nesting at a colony ----
 cut_leading_0s <- function(hep) {
   # input df must be the outpout of clean_hep()
