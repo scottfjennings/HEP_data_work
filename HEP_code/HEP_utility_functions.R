@@ -98,7 +98,7 @@ as_HEPDATA_files <- list.files(as_HEPDATA_location, full.names = TRUE)
 # RDS and .csv versions are saved, we just want the RDS files
 as_HEPDATA_files <- as_HEPDATA_files[!grepl(".csv", as_HEPDATA_files)]  
 
-as_HEPDATA <- map_df(as_HEPDATA_files[2], readRDS) %>% 
+as_HEPDATA <- map_df(as_HEPDATA_files, readRDS) %>% 
   mutate(across(contains("DATE"), ~as.POSIXct(.)),
          across(matches("RESULT|NESTING|STAGE|BRD|YEAR|CODE"), ~as.numeric(.)),
          across(contains("TYPE"), ~as.character(.)),
