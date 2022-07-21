@@ -91,6 +91,8 @@ return(out_table)
 #' @return data frame 
 #' @export
 #'
+#' @details Some colonies don't work well when converted to season summary sheet and thus get entered directly into HEPDATA (e.g. 11.2 in 2020, 2021), but still might exist in the as_HEPDATA files being appended. This function uses the HEPDATA version of these records. and drops the as_HEPDATA versions.
+#'
 #' @examples
 append_as_hepdata <- function(hep_start, as_HEPDATA_location = "C:/Users/scott.jennings/Documents/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA") {
 as_HEPDATA_files <- list.files(as_HEPDATA_location, full.names = TRUE)
@@ -104,7 +106,15 @@ as_HEPDATA <- map_df(as_HEPDATA_files, readRDS) %>%
          across(contains("TYPE"), ~as.character(.)),
          across(c(PEAKRICHNESS, TOTALSPECIES, NUMBERVISITS, TOTALHOURS, PEAKACTVNSTS, INDIVIDUALS, FOCALNESTS, FOCFAILURE), ~as.numeric(.)))
 
-combined_hep <- bind_rows(hep_start, as_HEPDATA)
+as_HEPDATA_years <- distinct(as_HEPDATA, YEAR)
+
+already_in_HEPDATA <- right_join(hep_start, as_HEPDATA_years) %>% 
+  select(YEAR, CODE, SPECIES)
+
+as_HEPDATA2 <- anti_join(as_HEPDATA, already_in_HEPDATA)
+
+combined_hep <- hep_start %>% 
+  bind_rows(as_HEPDATA2)
 return(combined_hep)
 }
 # clean_hep(); fix a few data problems ----
