@@ -16,15 +16,10 @@ hep_start <- hep_from_access(hepdata_location)
 hep_sites <- hep_sites_from_access(hepdata_location) 
 
 
-hep2020 <- readRDS("C:/Users/scott.jennings/Documents/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA/HEPDATA_2020") %>% 
-  mutate(across(c(JULSTGEDATE, DIST1DATE, DIST2DATE, DIST3DATE, DIST4DATE, DIST5DATE, DIST6DATE, DIST7DATE, DIST8DATE, DIST9DATE), ~ as.Date(.)),
-         across(contains("RESULT"), ~ as.character(.)),
-         across(contains("NESTING"), ~ as.character(.)))
-
 hep <- hep_start %>% 
+  append_as_hepdata() %>% 
   mutate(across(contains("RESULT"), ~ as.character(.)),
          across(contains("NESTING"), ~ as.character(.))) %>% 
-  bind_rows(., hep2020) %>% 
   clean_hep() %>% 
   filter(peakactvnsts >= 0) %>% 
   right_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% 
