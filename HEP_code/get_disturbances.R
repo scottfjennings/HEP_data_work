@@ -4,6 +4,7 @@
 
 # 1 packages ----
 library(tidyverse)
+library(lubridate)
 library(RColorBrewer)
 library(RODBC)
 library(rgdal)
@@ -44,6 +45,34 @@ dist <- dist_long %>%
   full_join(., data.frame(type = c("A", "H", "W", "M", "O", "P", "U"),
                           type.label = c("Avian", "Human", "Weather", "Mammal", "ACR field observer", "Unknown Predator", "unknown"))) %>%
   full_join(data.frame(result = c("0", "1", "2", "3", "4"),
-                       result.label = c("none", "behavioral response", "nest failure", "abandonment of colony", "pre-season disturbance")))
+                       result.label = c("none", "behavioral response", "nest failure", "abandonment of colony", "pre-season disturbance"))) %>% 
+  arrange(code, date, species, dist.num)
+
+
+type_results <- dist %>% 
+  filter(!is.na(date)) %>% 
+  mutate(dist.result.type = paste(type, result, sep = "_")) %>% 
+  pivot_wider(id_cols = c(code, date, dist.num), names_from = species, values_from = dist.result.type) %>% 
+  data.frame()
+  arrange(code, date) %>% 
+  mutate_all(as.character()) 
+
+
+write.csv(type_results, here("HEP_data/all_disturbance_types_results.csv"), row.names = FALSE)
 
   
+dist %>% 
+  filter(!is.na(date), result == 4) %>% 
+  mutate(month = month(date),
+         day = day(date)) %>% 
+  arrange(month, day) %>% view()
+  
+dist %>% 
+  filter(!is.na(date)) %>% 
+  mutate(result = as.numeric(result)) %>% 
+  group_by(code, date) %>% 
+  summarise(zresult = mean(result, na.rm = TRUE)) %>% 
+  filter(zresult != 0, zresult != 1, zresult != 2, zresult != 3, zresult != 4) %>% view()
+  select(-zresult) %>% 
+  left_join(dist) %>% 
+  view()
