@@ -12,7 +12,7 @@ options(scipen = 999)
 source("C:/Users/scott.jennings/Documents/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
 
 # data
-
+hep_sites <- readRDS(here("HEP_data/HEP_site_names_nums_utm"))
 
 
 
@@ -51,7 +51,7 @@ ggplot() +
                  text = paste(year,  "\n",
                               spp.name,  "\n",
                               "Value = ", round(value, 1)))) +
-  stat_smooth(aes(year, value, color = spp.name), se = FALSE) +
+  #stat_smooth(aes(year, value, color = spp.name), se = FALSE) +
   scale_color_manual(values = spp_color_name$spp.color) +
   geom_hline(yintercept = 0) +
   theme_bw() +
@@ -64,5 +64,8 @@ ggplotly(colony_plot, tooltip = "text")
 }
 
 
-hep_colony_plotter(94)
+hep_colony_plotter(53)
 hep_colony_plotter(c(27, 27.1))
+
+
+ggsave(here("figures_output/Bolinas_colony_viewer.png"))
