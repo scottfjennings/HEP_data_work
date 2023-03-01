@@ -1,0 +1,247 @@
+---
+title: ''
+output:
+  html_document: default
+params:
+  zcode: 599
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, 
+                      message = FALSE, 
+                      warning = FALSE,
+                      ft.align = "left")
+
+
+```
+
+
+```{r}
+
+library(tidyverse)
+library(lubridate)
+library(here)
+library(knitr)
+library(birdnames)
+library(plotly)
+
+options(scipen = 999)
+
+```
+
+```{r}
+# for testing
+# zcode = 17
+
+```
+
+
+  
+```{r}
+
+# total nests  
+colony_details <- readRDS(here("HEP_data/HEP_site_names_nums_utm")) %>% 
+  filter(code == zcode)
+
+
+historic_nesters <- readRDS(here("HEP_data/hep_annual_nest_abundance")) %>% 
+  filter(code == zcode, peakactvnsts > 0) %>% 
+  distinct(species) 
+
+historic_nesters_core_spp <- historic_nesters %>% 
+  filter(species %in% c("GBHE", "GREG"))
+
+
+historic_nesters_text <- historic_nesters %>% 
+  mutate(species = translate_bird_names(species, "alpha.code", "common.name"))
+if(nrow(historic_nesters_text) > 2) {
+historic_nesters_text <- paste(c(historic_nesters_text$species[-length(historic_nesters_text$species)], 
+                                 paste('and', historic_nesters_text$species[length(historic_nesters_text$species)], sep = " ")), collapse = ", ")
+} else {
+historic_nesters_text <- paste(historic_nesters_text$species, collapse = " and ") 
+}
+
+historic_nesters_text <- paste(historic_nesters_text, " have been observed nesting at ", colony_details$site.name, ".", sep = "")
+
+years_active <- readRDS(here("HEP_data/hep_annual_nest_abundance")) %>% 
+  filter(code == zcode, peakactvnsts > 0) %>% 
+  filter(year == min(year) | year == max(year)) %>% 
+  distinct(year) %>% 
+  mutate(ztext = ifelse(year == min(year), paste("The colony was first observed active in", year), paste(" and was most-recently observed active in ", year, ".", sep = ""))) %>% 
+  summarise(years.active = paste(ztext, collapse = " "))
+
+```
+
+
+# Summary of nest monitoring at the `r colony_details$site.name` heronry.  
+
+Below is a summary of heron and egret nest monitoring data from `r colony_details$site.name`. These data are preliminary, and should not be considered a final report on activity at this nesting site. Observer review is an important part of our data quality control process--if you see something that is inconsistent with the data you collected, please contact us at cgrc@egret.org. 
+<br>  
+
+
+**Species nesting and years active**
+
+`r historic_nesters_text` `r years_active$years.active`
+
+
+**Colony Size Estimate**  
+
+
+One of the main pieces of information observers collect each visit is the total number of active nests of each species in the colony. We use these data to estimate the maximum (peak) number of nests observed active at the same time, which enables us to evaluate changes in the overall breeding population.  
+
+<br>  
+
+Tip: hover over the top of each bar to see the value that year. 
+```{r fig.width=8}
+historic_nest_abund <- readRDS(here("HEP_data/hep_annual_nest_abundance")) %>% 
+  filter(code == zcode, peakactvnsts >= 0) %>% 
+  ungroup() %>% 
+  select(year, species, peakactvnsts) 
+
+
+historic_nest_abund4plot <- expand.grid(species = distinct(historic_nest_abund, species)$species,
+                  year = seq(min(historic_nest_abund$year, na.rm = TRUE), max(historic_nest_abund$year, na.rm = TRUE))) %>% 
+  full_join(historic_nest_abund) %>% 
+  group_by(species) %>% 
+  mutate(max.abund = max(peakactvnsts, na.rm = TRUE),
+         lab.na = max.abund/15) %>% 
+  ungroup() %>% 
+  filter(max.abund > 0,
+         !is.na(year)) %>% 
+  mutate(common.name = translate_bird_names(species, "alpha.code", "common.name"),
+         peakactvnsts = replace_na(peakactvnsts, 0))
+
+
+
+
+if(max(historic_nest_abund4plot$year, na.rm = TRUE) - min(historic_nest_abund4plot$year, na.rm = TRUE) > 5) {
+  zyears <- seq((floor(min(historic_nest_abund4plot$year, na.rm = TRUE)/5)*5), (ceiling(max(historic_nest_abund4plot$year, na.rm = TRUE)/5)*5), by = 5)
+} else {
+  zyears <- seq(min(historic_nest_abund4plot$year, na.rm = TRUE), max(historic_nest_abund4plot$year, na.rm = TRUE))
+}
+
+colony_plot <- historic_nest_abund4plot %>%  
+  ggplot()  +
+  geom_col(aes(x = year, y = peakactvnsts,
+                 text = paste(year,  "\n",
+                              "Total nests = ", peakactvnsts)), 
+color = "black") +
+  xlim(min(zyears), max(zyears)) +
+  scale_x_continuous(labels = zyears, 
+                     breaks = zyears) +
+  #geom_text(data = filter(historic_nest_abund4plot, is.na(peakactvnsts)), aes(x = year, y = lab.na, label = "X")) +
+  labs(y = "Total number of nests",
+       x = "Year",
+       title = "Peak number of active nests",
+       fill = "") +
+  facet_wrap(~common.name, ncol = ceiling(distinct(historic_nest_abund4plot, species) %>% nrow()/2), scales = "free") + 
+  theme_bw()
+
+ggplotly(colony_plot, tooltip = "text")
+
+```
+
+
+**Seasonal Timing**  
+
+Observers also collect data on how many nests are in each stage of the nesting cycle for Great Blue Heron and Great Egret on each visit. We use these data to estimate the intra-seasonal timing of nesting. The proportion of nests that have reached the unguarded stage (Stages 4 and 5) by the May (Great Blue Heron) or June (Great Egret) Regional Nest Observation Period is a useful metric for us to gauge the intra-seasonal timing of nesting. A larger than average proportion of unguarded nests suggests that the birds began nesting earlier that year than normal.  
+
+<br>  
+
+Tip: hover over the top of each bar to see the value that year. 
+```{r fig.width=8}
+historic_phenology <- readRDS(here("HEP_data/hep_annual_phenology")) %>% 
+  filter(code == zcode) %>% 
+  ungroup() %>% 
+  mutate(common.name = translate_bird_names(species, "alpha.code", "common.name"))
+ 
+
+historic_phenology4plot <- expand.grid(common.name = distinct(historic_phenology, common.name)$common.name,
+                                       year = seq(min(historic_phenology$year), max(historic_phenology$year))) %>% 
+  full_join(historic_phenology)
+
+hist.mean = historic_phenology %>% 
+  group_by(common.name) %>% 
+  summarise(hist.mean = mean(phen.prop.unguarded, na.rm = TRUE))
+
+if(max(historic_phenology4plot$year) - min(historic_phenology4plot$year) > 5) {
+  zyears <- seq((floor(min(historic_phenology4plot$year, na.rm = TRUE)/5)*5), (ceiling(max(historic_phenology4plot$year, na.rm = TRUE)/5)*5), by = 5)
+} else {
+  zyears <- seq(min(historic_phenology4plot$year), max(historic_phenology4plot$year))
+}
+
+phenology_plot <- historic_phenology4plot %>%  
+  full_join(hist.mean) %>%
+  ggplot() + 
+  theme_bw() +
+  geom_errorbar(aes(x = year, ymax = phen.prop.unguarded + phen.prop.unguarded.se, ymin = phen.prop.unguarded - phen.prop.unguarded.se))  +
+  geom_col(aes(x = year, y = phen.prop.unguarded,
+                 text = paste(year,  "\n",
+                              "Proportion unguarded = ", round(phen.prop.unguarded, 2))), color = "black") +
+  geom_hline(aes(yintercept = hist.mean)) +
+  scale_x_continuous(labels = zyears, 
+                     breaks = zyears) +
+  labs(y = "Proportion of nests unguarded",
+       x = "Year",
+       title = "Intraseasonal timing (horizontal line is long term average)",
+       fill = "") +
+  facet_wrap(~common.name, ncol = 1)
+
+
+ggplotly(phenology_plot, tooltip = "text")
+
+```
+
+ 
+**Productivity**  
+
+<br>
+
+Observers also collect data on the number of chicks in each Stage 4 nest for Great Blue Heron and Great Egret. We use these data to estimate the average prefledging brood size for the colony, which we use as a measure of how successful the colony is at reproducing. Because Stage 5 chicks may move into neighboring nests, we calculate the number of Stage 4 chicks per nest only on the latest date when there are still no Stage 5 chicks observed in the colony.   
+<br>
+
+Tip: hover over the top of each bar to see the value that year.
+```{r fig.width=8}
+historic_productivity <- readRDS(here("HEP_data/hep_annual_new_productivity")) %>% 
+  filter(code == zcode) %>% 
+  ungroup() 
+
+
+
+historic_productivity4plot <- expand.grid(species = historic_nesters_core_spp$species,
+                                          year = seq(min(historic_productivity$year), max(historic_productivity$year))) %>% 
+  full_join(historic_productivity) %>% 
+  group_by(species) %>% 
+  mutate(lab.na = max(mean.chx.per.nest, na.rm = TRUE)/10) %>% 
+  ungroup() %>% 
+  mutate(common.name = translate_bird_names(species, "alpha.code", "common.name"),
+         mean.chx.per.nest = replace_na(mean.chx.per.nest, 0))
+
+if(max(historic_productivity4plot$year) - min(historic_productivity4plot$year) > 5) {
+  zyears <- seq((floor(min(historic_productivity4plot$year, na.rm = TRUE)/5)*5), (ceiling(max(historic_productivity4plot$year, na.rm = TRUE)/5)*5), by = 5)
+} else {
+  zyears <- seq(min(historic_productivity4plot$year), max((historic_productivity4plot$year)))
+}
+
+brood_size_plot <- historic_productivity4plot %>%  
+  ggplot() + 
+  theme_bw() +
+  geom_errorbar(aes(x = year, ymax = mean.chx.per.nest + st.err.chx.per.nest, ymin = mean.chx.per.nest - st.err.chx.per.nest))  +
+  geom_col(aes(x = year, y = mean.chx.per.nest,
+                 text = paste(year,  "\n",
+                              "Brood size = ", round(mean.chx.per.nest, 2))), color = "black") + 
+  geom_text(data = filter(historic_productivity4plot, is.na(mean.chx.per.nest)), aes(x = year, y = lab.na), label = "X") +
+  scale_x_continuous(labels = zyears, 
+                     breaks = zyears) +
+  labs(y = "Brood size",
+       x = "Year",
+       title = "Average pre-fledging brood size") +
+  facet_wrap(~common.name, ncol = 1)
+
+
+ggplotly(brood_size_plot, tooltip = "text")
+
+
+```
+
+ 
