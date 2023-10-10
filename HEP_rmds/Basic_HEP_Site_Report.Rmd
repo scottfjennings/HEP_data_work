@@ -22,13 +22,13 @@ library(flextable)
 library(lme4)
 library(birdnames)
 options(scipen = 999)
-source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/numbers2words.R")
-source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
-# source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_data_summary_functions.R")
+source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/my_R_general/utility_functions/numbers2words.R")
+source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+# source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/HEP/HEP_data_work/HEP_code/HEP_data_summary_functions.R")
 
 
-par_code = 68
-zyear = 2021
+par_code = 31
+zyear = 2023
   
 ```
 
@@ -37,28 +37,30 @@ zyear = 2021
 ```{r echo=FALSE}
 
 
-hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+hepdata_location = "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # all these functions are in HEP_utility_functions.R
 hep_start <- hep_from_access(hepdata_location)
 hep_sites <- hep_sites_from_access(hepdata_location) %>% 
   filter(parent.code == par_code)
 
+new_years <- seq(max(hep_start$YEAR) + 1, zyear) 
 
-hep_2020 <- read.csv("C:/Users/scott.jennings/Documents/Projects/HEP/rawhep_to_HEPDATA/data/as_HEPDATA/HEPDATA_2020.csv") %>% 
-  clean_hep() %>% 
-  right_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))
+new_hep_files <- list.files(("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA"))
 
-hep_2021 <- read.csv("C:/Users/scott.jennings/Documents/Projects/HEP/rawhep_to_HEPDATA/data/as_HEPDATA/HEPDATA_2021.csv") %>% 
-  clean_hep() %>% 
-  right_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))
+selected.files <- new_hep_files[str_detect(new_hep_files, paste(new_years, collapse = "|"))]
+
+selected.files <- selected.files[str_detect(selected.files, ".csv", negate = TRUE)]
+
+
+new_hep <- map_df(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA/", selected.files, sep = ""), readRDS)
 
 
 hep <- hep_start %>% 
+  bind_rows(new_hep) %>% 
   clean_hep() %>% 
   filter(peakactvnsts >= 0) %>% 
   right_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # this is a filtering join to par_code
-  rbind(hep_2020, hep_2021) %>% 
-  trim_hep_columns(stage = FALSE) %>% 
+trim_hep_columns(stage = FALSE) %>% 
   cut_never_nested() %>% 
   rename(alpha.code = species) %>% 
   mutate(site.name = as.character(site.name),
@@ -112,7 +114,8 @@ Table 1. Species detected nesting at `r par_colony$parent.site.name`, first year
 ```{r echo=FALSE}
 species_years %>% 
   select(-last.year) %>% 
-  arrange(common.name) %>% 
+  arrange(site.name, common.name) %>%
+  mutate(first.year = as.character(first.year)) %>% 
   flextable() %>% 
   set_header_labels(site.name = "Subcolony",
                     common.name = "Species",
