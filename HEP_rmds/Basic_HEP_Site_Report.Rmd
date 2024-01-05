@@ -39,7 +39,9 @@ zyear = 2023
 
 hepdata_location = "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # all these functions are in HEP_utility_functions.R
-hep_start <- hep_from_access(hepdata_location)
+hep_start <- hep_from_access(hepdata_location) %>% 
+  filter(round(CODE, 0) == par_code)
+
 hep_sites <- hep_sites_from_access(hepdata_location) %>% 
   filter(parent.code == par_code)
 
@@ -52,8 +54,8 @@ selected.files <- new_hep_files[str_detect(new_hep_files, paste(new_years, colla
 selected.files <- selected.files[str_detect(selected.files, ".csv", negate = TRUE)]
 
 
-new_hep <- map_df(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA/", selected.files, sep = ""), readRDS)
-
+new_hep <- map_df(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA/", selected.files, sep = ""), readRDS)  %>% 
+  filter(round(CODE, 0) == par_code)
 
 hep <- hep_start %>% 
   bind_rows(new_hep) %>% 
@@ -107,7 +109,7 @@ Heron and egret nest monitoring for `r par_colony$parent.site.name`, `r zyear` s
 Audubon Canyon Ranch has monitored heron and egret nesting activity throughout the North San Francisco Bay Area since 1990. Each year, a ACR staff and citizen science volunteers monitor 60-80 active colony sites. Each colony is visited approximately 1-2 times per month between March-July. Observers collect information on which species are present and actively nesting, the number of nests of each species, how many nests survive to fledge, and how many young are produced per nests.  
 \
 \
-ACR has monitored `r par_colony$parent.site.name` since `r min(colony_first_year$year)`. In that time, we have documented `r spp_richness$spp.richness` species nesting there (Table 1).
+ACR has monitored `r par_colony$parent.site.name` since `r min(colony_first_year$first.year)`. In that time, we have documented `r spp_richness$spp.richness` species nesting there (Table 1).
 \
 \
 Table 1. Species detected nesting at `r par_colony$parent.site.name`, first year and number of years recorded nesting.
@@ -204,7 +206,15 @@ chx_per_nest_standard_error <- stage4_chicks %>%
 
 chicks_per_nest_se <- chx_per_nest_standard_error %>% 
   select(year, common.name, site.name, st.error) %>% 
-  full_join(chicks_per_nest)
+  full_join(chicks_per_nest) %>% 
+  mutate(common.name = factor(common.name, levels = levels(core4spp)))
+
+ann_dat = data.frame(year = 2023,
+                     chicks.per.nest = 0.01,
+                     common.name = "Great Egret",
+                     lab = "*") %>% 
+  mutate(common.name = factor(common.name, levels = levels(core4spp)))
+
 
 chicks_per_nest_se %>% 
   ggplot() +
@@ -218,7 +228,8 @@ chicks_per_nest_se %>%
   theme_bw() +
   ylab("Chicks/nest") +
   xlab("Year") +
-  theme(legend.title = element_blank())
+  theme(legend.title = element_blank()) +
+  geom_text(data = ann_dat, aes(x = 2023, y = 0.01), label = "*")
 
   
 
