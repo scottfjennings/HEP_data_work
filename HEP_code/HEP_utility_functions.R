@@ -6,6 +6,7 @@ library(readr)
 library(RODBC)
 library(here)
 library(RColorBrewer)
+library(birdnames)
 
 #hep <- hep_from_access() %>% 
 #  clean_hep() %>% 
@@ -15,10 +16,53 @@ library(RColorBrewer)
 #  trim_hep_columns()
 
 
+
+
+# helper table for subregions
+subreg_key <- read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_data/subregion_key.csv") %>% 
+  mutate(subreg.name = factor(subreg.name, levels = c("Entire study area", 
+                                                      "Outer Pacific Coast, North",
+                                                      "Outer Pacific Coast, South", 
+                                                      "Russian River, Laguna de Santa Rosa", 
+                                                      "Northern Napa County",
+                                                      "San Pablo Bay", 
+                                                      "Central San Francisco Bay", 
+                                                      "Suisun Bay", 
+                                                      "Interior East Bay",
+                                                      "South San Francisco Bay", 
+                                                      "Santa Clara Valley")))
+
+# define_species_colors(); define standard species colors for plotting ----
+
+spp_color_name = data.frame(species = c("GREG", "GBHE", "SNEG", "BCNH", "CAEG", "DCCO", "All"),
+                            spp.color.brewer = c(brewer.pal(8, "Dark2")[1], brewer.pal(8, "Dark2")[2], 
+                                                 brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[4], 
+                                                 brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[6], 
+                                                 brewer.pal(8, "Dark2")[7]),
+                            spp.color.emily = c("#752626", "#74435E", "#025358", "#CC6633", "#394F34", NA, NA)) %>% 
+  mutate(common.name = translate_bird_names(species, "alpha.code", "common.name"),
+         common.name = factor(common.name, levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron", "Cattle Egret", "Double-crested Cormorant", "All"))) %>% 
+  arrange(common.name)
+
+core4spp <- factor(c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"), levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"))
+core4spp_colors <- c(brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[1])
+
+
+
+
 # default location, can be overwritten later
-#hepdata_location = "S:/Databases/HEP_data/HEPDATA.accdb"
+#hepdata_location = "V:/HEP_data/HEPDATA.accdb" # this is the path for Azure via remote desktop
 # hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # data reading ----
+#' Title
+#'
+#' @param hepdata_location 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' hep <- hep_from_access(hepdata_location)
 hep_from_access <- function(hepdata_location = hepdata_location){
   if(is.na(hepdata_location)){
     print("Please assign location of HEPDATA access file to hepdata_location")
@@ -42,6 +86,7 @@ out_table <- out_table %>%
 
 return(out_table)
 }
+
 
 hep_sites_from_access <- function(hepdata_location = hepdata_location){
   if(is.na(hepdata_location)){
@@ -94,7 +139,7 @@ return(out_table)
 #' @details Some colonies don't work well when converted to season summary sheet and thus get entered directly into HEPDATA (e.g. 11.2 in 2020, 2021), but still might exist in the as_HEPDATA files being appended. This function uses the HEPDATA version of these records. and drops the as_HEPDATA versions.
 #'
 #' @examples
-append_as_hepdata <- function(hep_start, as_HEPDATA_location = "C:/Users/scott.jennings/Documents/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA") {
+append_as_hepdata <- function(hep_start, as_HEPDATA_location = "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/as_HEPDATA") {
 as_HEPDATA_files <- list.files(as_HEPDATA_location, full.names = TRUE)
 
 # RDS and .csv versions are saved, we just want the RDS files
@@ -109,7 +154,8 @@ as_HEPDATA <- map_df(as_HEPDATA_files, readRDS) %>%
 as_HEPDATA_years <- distinct(as_HEPDATA, YEAR)
 
 already_in_HEPDATA <- right_join(hep_start, as_HEPDATA_years) %>% 
-  select(YEAR, CODE, SPECIES)
+  select(YEAR, CODE, SPECIES) %>% 
+  filter(!is.na(CODE))
 
 as_HEPDATA2 <- anti_join(as_HEPDATA, already_in_HEPDATA)
 
@@ -117,6 +163,8 @@ combined_hep <- hep_start %>%
   bind_rows(as_HEPDATA2)
 return(combined_hep)
 }
+
+
 # clean_hep(); fix a few data problems ----
 clean_hep <- function(hep) { 
   # this function needs to be run first !!!!!
@@ -136,16 +184,6 @@ clean_hep <- function(hep) {
 # species order
 hep_species_order <- data.frame(species = c("GREG", "GBHE", "BCNH", "SNEG", "CAEG", "DCCO"),
                                 sp.order = seq(1:6))  
-
-# define_species_colors(); define standard species colors for plotting ----
-
-  spp_color_name = data.frame(species = c("BCNH", "CAEG", "GBHE", "GREG", "SNEG", "All", "DCCO"),
-                    spp.color = c(brewer.pal(8, "Dark2")[1], brewer.pal(8, "Dark2")[2], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[6], brewer.pal(8, "Dark2")[7]),
-                    spp.name = c("Black-crowned Night-Heron", "Cattle Egret", "Great Blue Heron", "Great Egret", "Snowy Egret", "All", "Double-crested Cormorant")) %>% 
-  mutate(spp.name = factor(spp.name, levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron", "Cattle Egret", "Double-crested Cormorant", "All")))
-
-core4spp <- factor(c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"), levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"))
-core4spp_colors <- c(brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[1])
 
 
 # add_site_names(); combine with site names ----
@@ -333,7 +371,7 @@ hep_changes <- hep %>%
          zero2zero = ifelse(consec.yrs, peakactvnsts == 0 & prev.yr.nsts == 0, NA),
          zero2some = ifelse(consec.yrs, prev.yr.nsts == 0 & peakactvnsts > 0, NA)) %>% 
   mutate(per.change.1year = ifelse(per.change.1year == Inf, (100 * abs.change.1year), per.change.1year))%>% 
-  #left_join(., spp.name) %>% 
+  #left_join(., common.name) %>% 
   #left_join(., hep.subreg.key) %>% 
   ungroup()  
 }
@@ -396,8 +434,8 @@ zcolor <- hep4plot %>%
 plot.cols <- zcolor[[2]]
 
   zplot = ggplot(data = hep4plot) +
-    geom_point(aes(x = year, y = peakactvnsts, color = spp.name)) +
-    stat_smooth(aes(x = year, y = peakactvnsts, color = spp.name), se = F) +
+    geom_point(aes(x = year, y = peakactvnsts, color = common.name)) +
+    stat_smooth(aes(x = year, y = peakactvnsts, color = common.name), se = F) +
     #ggtitle(paste(col.name, " - Colony size", sep = "")) +
     ggtitle(col.name) +
     theme_classic() +
@@ -435,8 +473,8 @@ zcolor <- hep4plot %>%
 plot.cols <- zcolor[[2]]
 
   zplot = ggplot(data = hep4plot) +
-    geom_point(aes(x = year, y = mean.brd.size, color = spp.name)) +
-    stat_smooth(aes(x = year, y = mean.brd.size, color = spp.name), se = F) +
+    geom_point(aes(x = year, y = mean.brd.size, color = common.name)) +
+    stat_smooth(aes(x = year, y = mean.brd.size, color = common.name), se = F) +
     ggtitle(col.name) +
     theme(legend.title=element_blank(),
         panel.background = element_blank(),
