@@ -25,3 +25,10 @@ hep <- hep_start %>%
 
 
 saveRDS(hep, "HEP_data/hep_annual_nest_abundance")
+
+
+
+hep <- readRDS("HEP_data/hep_annual_nest_abundance")
+
+
+
