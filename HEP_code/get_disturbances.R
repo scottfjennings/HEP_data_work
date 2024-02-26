@@ -59,6 +59,7 @@ type_results <- dist %>%
 
 
 write.csv(type_results, here("HEP_data/all_disturbance_types_results.csv"), row.names = FALSE)
+type_results <- read.csv(here("HEP_data/all_disturbance_types_results.csv"))
 
   
 dist %>% 
@@ -76,3 +77,27 @@ dist %>%
   select(-zresult) %>% 
   left_join(dist) %>% 
   view()
+
+  
+  
+# disturbance by year and subregion
+  
+  dist %>% 
+    group_by(year, code) %>% 
+    summarise(num.dist = n()) %>% 
+    full_join(hep_sites %>%  select(code, subregion)) %>% 
+    group_by(year, subregion) %>% 
+    summarise(mean.dist.per.col = mean(num.dist)) %>%
+    filter(year > 1994) %>% 
+    ggplot() +
+    geom_point(aes(x = year, y = mean.dist.per.col)) +
+    stat_smooth(aes(x = year, y = mean.dist.per.col)) +
+    facet_wrap(~subregion)
+
+  
+  dist %>% 
+    full_join(hep_sites %>%  select(code, subregion)) %>% 
+    filter(subregion == "CSF") %>% 
+    arrange(year, code, species)%>% view()
+  
+  
