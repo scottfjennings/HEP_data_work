@@ -6,7 +6,6 @@ library(readr)
 library(RODBC)
 library(here)
 library(RColorBrewer)
-library(birdnames)
 
 #hep <- hep_from_access() %>% 
 #  clean_hep() %>% 
@@ -31,41 +30,6 @@ subreg_key <- read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/
                                                       "Interior East Bay",
                                                       "South San Francisco Bay", 
                                                       "Santa Clara Valley")))
-
-# helper table for west marin colonies
-
-w_marin_colonies <- bind_rows(data.frame(code = c(32.000, 32.100,
-                                              50.000, 50.200, 50.999, 50.300, 50.100,
-                                              83.000,
-                                              113.000, 113.100,
-                                              114.000,
-                                              119.000,
-                                              122.000,
-                                              143.000,
-                                              152.000,
-                                              160.000, 160.100),
-                                         marin.region = "Tomales Bay"),
-                              data.frame(code = c(1, 1.1, 53, 53.1),
-                                         marin.region = "Bolinas Lagoon"),
-                              data.frame(code = c(17, 137, 94),
-                                         marin.region = "Point Reyes"))
-
-
-
-
-# define_species_colors(); define standard species colors for plotting ----
-
-spp_color_name = data.frame(alpha.code = c("GREG", "GBHE", "SNEG", "BCNH", "CAEG", "DCCO", "All"),
-                            spp.color.brewer = c(brewer.pal(8, "Dark2")[1], brewer.pal(8, "Dark2")[2], 
-                                                 brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[4], 
-                                                 brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[6], 
-                                                 brewer.pal(8, "Dark2")[7])) %>% 
-  mutate(common.name = ifelse(alpha.code != "All", translate_bird_names(alpha.code, "alpha.code", "common.name"), "All"),
-         common.name = factor(common.name, levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron", "Cattle Egret", "Double-crested Cormorant", "All"))) %>% 
-  arrange(common.name)
-
-core4spp <- factor(c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"), levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"))
-core4spp_colors <- c(brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[1])
 
 
 
@@ -204,6 +168,16 @@ clean_hep <- function(hep) {
 # species order
 hep_species_order <- data.frame(species = c("GREG", "GBHE", "BCNH", "SNEG", "CAEG", "DCCO"),
                                 sp.order = seq(1:6))  
+
+# define_species_colors(); define standard species colors for plotting ----
+
+  spp_color_name = data.frame(species = c("BCNH", "CAEG", "GBHE", "GREG", "SNEG", "All", "DCCO"),
+                    spp.color = c(brewer.pal(8, "Dark2")[1], brewer.pal(8, "Dark2")[2], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[6], brewer.pal(8, "Dark2")[7]),
+                    spp.name = c("Black-crowned Night-Heron", "Cattle Egret", "Great Blue Heron", "Great Egret", "Snowy Egret", "All", "Double-crested Cormorant")) %>% 
+  mutate(spp.name = factor(spp.name, levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron", "Cattle Egret", "Double-crested Cormorant", "All")))
+
+core4spp <- factor(c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"), levels = c("Great Egret", "Great Blue Heron", "Snowy Egret", "Black-crowned Night-Heron"))
+core4spp_colors <- c(brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[3], brewer.pal(8, "Dark2")[5], brewer.pal(8, "Dark2")[1])
 
 
 # add_site_names(); combine with site names ----
@@ -391,7 +365,7 @@ hep_changes <- hep %>%
          zero2zero = ifelse(consec.yrs, peakactvnsts == 0 & prev.yr.nsts == 0, NA),
          zero2some = ifelse(consec.yrs, prev.yr.nsts == 0 & peakactvnsts > 0, NA)) %>% 
   mutate(per.change.1year = ifelse(per.change.1year == Inf, (100 * abs.change.1year), per.change.1year))%>% 
-  #left_join(., common.name) %>% 
+  #left_join(., spp.name) %>% 
   #left_join(., hep.subreg.key) %>% 
   ungroup()  
 }
@@ -454,8 +428,8 @@ zcolor <- hep4plot %>%
 plot.cols <- zcolor[[2]]
 
   zplot = ggplot(data = hep4plot) +
-    geom_point(aes(x = year, y = peakactvnsts, color = common.name)) +
-    stat_smooth(aes(x = year, y = peakactvnsts, color = common.name), se = F) +
+    geom_point(aes(x = year, y = peakactvnsts, color = spp.name)) +
+    stat_smooth(aes(x = year, y = peakactvnsts, color = spp.name), se = F) +
     #ggtitle(paste(col.name, " - Colony size", sep = "")) +
     ggtitle(col.name) +
     theme_classic() +
@@ -493,8 +467,8 @@ zcolor <- hep4plot %>%
 plot.cols <- zcolor[[2]]
 
   zplot = ggplot(data = hep4plot) +
-    geom_point(aes(x = year, y = mean.brd.size, color = common.name)) +
-    stat_smooth(aes(x = year, y = mean.brd.size, color = common.name), se = F) +
+    geom_point(aes(x = year, y = mean.brd.size, color = spp.name)) +
+    stat_smooth(aes(x = year, y = mean.brd.size, color = spp.name), se = F) +
     ggtitle(col.name) +
     theme(legend.title=element_blank(),
         panel.background = element_blank(),
