@@ -20,15 +20,20 @@ hep_parent_sites <- hep_sites %>%
   summarise(utmnorth = mean(utmnorth),
             utmeast = mean(utmeast))
 
-hep_parent_sites_utm <- SpatialPoints(cbind(hep_parent_sites$utmeast, hep_parent_sites$utmnorth), proj4string = CRS('+proj=utm +zone=10 +ellps=WGS84 +datum=WGS84 +units=m +no_defs'))
+hep_parent_sites_utm <- st_as_sf(hep_parent_sites, coords = c("utmeast", "utmnorth"), crs = "EPSG:32610")
 
-hep_parent_sites_dd <- spTransform(hep_parent_sites_utm, CRS("+init=epsg:4326"))
+hep_parent_sites_dd <- st_transform(hep_parent_sites_utm, CRS("+init=epsg:4326"))
 
-hep_parent_sites_dd_df <- hep_parent_sites_dd@coords %>% 
+hep_parent_sites_dd_df <- hep_parent_sites_dd  %>% 
+  dplyr::mutate(longitude = sf::st_coordinates(.)[,1],
+                latitude = sf::st_coordinates(.)[,2]) %>% 
   data.frame() %>% 
-  cbind(hep_parent_sites$parent.code)
+  dplyr::select(-geometry) %>% 
+  relocate(latitude, longitude, parent.code)
 
 write.csv(hep_parent_sites_dd_df, "HEP_data/hep_parent_sites_dd_df.csv", row.names = F)
+
+write.csv(hep_parent_sites_dd_df, "HEP_data/hep_parent_sites_dd_df_nohead.csv", row.names = F, col.names = FALSE)
 
 read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/hep_analyses/how_are_the_egrets_doing/data/all_sfbbo_sites_subreg.csv") %>% 
   dplyr::select(Latitude, Longitude) %>%
@@ -47,13 +52,15 @@ read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_
 
 # next, consolidate those files
 
+hep_prism_85_89 <- read.csv("HEP_data/hep_prism_data/PRISM_ppt_stable_4km_198501_198912.csv", skip = 10)
 hep_prism_90_04 <- read.csv("HEP_data/hep_prism_data/hep_PRISM_ppt_stable_4km_199001_200412.csv", skip = 10)
 hep_prism_05_19 <- read.csv("HEP_data/hep_prism_data/hep_PRISM_ppt_stable_4km_200501_201912.csv", skip = 10)
 hep_prism_20_21 <- read.csv("HEP_data/hep_prism_data/PRISM_ppt_provisional_4km_202001_202307.csv", skip = 10)
 
-hep_prism <- bind_rows(read.csv("HEP_data/hep_prism_data/hep_PRISM_ppt_stable_4km_199001_200412.csv", skip = 10),
-                   read.csv("HEP_data/hep_prism_data/hep_PRISM_ppt_stable_4km_200501_201912.csv", skip = 10),
-                   read.csv("HEP_data/hep_prism_data/PRISM_ppt_provisional_4km_202001_202307.csv", skip = 10)) %>% 
+hep_prism <- bind_rows(read.csv("HEP_data/hep_prism_data/PRISM_ppt_stable_4km_198501_198912.csv", skip = 10),
+                       read.csv("HEP_data/hep_prism_data/hep_PRISM_ppt_stable_4km_199001_200412.csv", skip = 10),
+                       read.csv("HEP_data/hep_prism_data/hep_PRISM_ppt_stable_4km_200501_201912.csv", skip = 10),
+                       read.csv("HEP_data/hep_prism_data/PRISM_ppt_provisional_4km_202001_202307.csv", skip = 10)) %>% 
   separate(Date, c("year", "month"), sep = "-", remove = F) %>% 
   rename(rain.mm = ppt..mm.) %>% 
   dplyr::select(parent.code = Name, year, month, rain.mm)
@@ -81,10 +88,9 @@ saveRDS(sfbbo_prism, "HEP_data/hep_prism_data/sfbbo_prism_combined")
 # summarize rain data by HEP subregion ----
 # this copied and generalized from C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/hep_analyses/how_are_the_egrets_doing/code/ms_analysis/rain_varbs.R
 
-start.year = 1995
-end.year = 2019
+start.year = 1989
+end.year = 2023
 
-source(here("code/hep_trend_utilities.r"))
 
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
 
