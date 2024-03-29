@@ -27,8 +27,15 @@ source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_mo
 # source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/HEP/HEP_data_work/HEP_code/HEP_data_summary_functions.R")
 
 
-par_code = 31
+hepdata_location = "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
+
+# if you need help finding the parent code you need, run this to get the full list with names
+# hep_sites_from_access(hepdata_location) %>% distinct(code, parent.code, site.name, parent.site.name) %>% arrange(parent.site.name) %>% view()
+
+par_code = 58
 zyear = 2023
+# include a sentence listing survey dates?
+include.visits = TRUE
   
 ```
 
@@ -37,7 +44,6 @@ zyear = 2023
 ```{r echo=FALSE}
 
 
-hepdata_location = "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # all these functions are in HEP_utility_functions.R
 hep_start <- hep_from_access(hepdata_location) %>% 
   filter(round(CODE, 0) == par_code)
@@ -62,7 +68,7 @@ hep <- hep_start %>%
   clean_hep() %>% 
   filter(peakactvnsts >= 0) %>% 
   right_join(., dplyr::select(hep_sites, code, parent.code, site.name, parent.site.name, county, subregion))  %>% # this is a filtering join to par_code
-trim_hep_columns(stage = FALSE) %>% 
+  trim_hep_columns(stage = FALSE) %>% 
   cut_never_nested() %>% 
   rename(alpha.code = species) %>% 
   mutate(site.name = as.character(site.name),
@@ -102,14 +108,74 @@ spp_richness <- hep %>%
   summarise(spp.richness = n()) %>% 
   mutate(spp.richness = numbers2words(spp.richness))
 
+if(include.visits == TRUE) {
+  visits <- readRDS(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/wrangled/wrangled_raw_", zyear, sep = ""))$dates %>% 
+    full_join(subcolonies) %>% 
+    filter(parent.code == par_code) %>% 
+    distinct(parent.site.name, date) %>% 
+    mutate(mon.day = paste(month(date, label = TRUE, abbr = TRUE), day(date))) %>% 
+    group_by(parent.site.name) %>% 
+    summarise(dates = paste(mon.day, collapse = ", "))
+  
+survey_dates  =  paste("In ", zyear, ", ", visits$parent.site.name, " was surveyed on ", visits$dates, ".", sep = "")
+} else {
+  survey_dates = ""
+}
+
+
+
 ```
+
 Heron and egret nest monitoring for `r par_colony$parent.site.name`, `r zyear` season.
 \
 \
 Audubon Canyon Ranch has monitored heron and egret nesting activity throughout the North San Francisco Bay Area since 1990. Each year, a ACR staff and citizen science volunteers monitor 60-80 active colony sites. Each colony is visited approximately 1-2 times per month between March-July. Observers collect information on which species are present and actively nesting, the number of nests of each species, how many nests survive to fledge, and how many young are produced per nests.  
 \
 \
-ACR has monitored `r par_colony$parent.site.name` since `r min(colony_first_year$first.year)`. In that time, we have documented `r spp_richness$spp.richness` species nesting there (Table 1).
+ACR has monitored `r par_colony$parent.site.name` since `r min(colony_first_year$first.year)`. In that time, we have documented `r spp_richness$spp.richness` species nesting there (Table 1). `r survey_dates`  
+
+```{r}
+
+notes <- readRDS(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/wrangled/wrangled_raw_", zyear, sep = ""))$notes %>% 
+    full_join(subcolonies) %>% 
+    filter(parent.code == par_code, note.type == "field") %>% 
+    distinct(date, notes, site.name, parent.site.name) %>% 
+    mutate(mon.day = paste(month(date, label = TRUE, abbr = TRUE), day(date)),
+           out.text = paste(mon.day, notes, site.name, sep = ". ")) 
+```
+
+`r notes$out.text`
+
+
+
+```{r}
+
+disturbance <- readRDS(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/wrangled/wrangled_raw_", zyear, sep = ""))$disturbance %>% 
+    full_join(subcolonies) %>% 
+    filter(parent.code == par_code, !is.na(date)) %>% 
+    distinct(date, description, site.name, parent.site.name) %>% 
+    mutate(mon.day = paste(month(date, label = TRUE, abbr = TRUE), day(date)),
+           out.text = paste(mon.day, description, site.name, sep = ". ")) 
+```
+
+`r disturbance$out.text`
+
+
+```{r}
+
+predators <- readRDS(paste("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/rawhep_to_HEPDATA/data/wrangled/wrangled_raw_", zyear, sep = ""))$predators %>% 
+    full_join(subcolonies) %>% 
+    filter(parent.code == par_code, !is.na(date)) %>% 
+  select(-species) %>% 
+    distinct() %>% 
+  group_by(site.name) %>% 
+  summarise(predators = paste(translate_bird_names(predator.species, "alpha.code", "common.name"), collapse = "; ")) %>% 
+  ungroup() %>% 
+  mutate(out.text = paste(predators, site.name))
+```
+
+`r predators$out.text`
+
 \
 \
 Table 1. Species detected nesting at `r par_colony$parent.site.name`, first year and number of years recorded nesting.
@@ -134,10 +200,9 @@ species_years %>%
 
 
 
-
-
-Figure 1. Total number of nest at the `r par_colony$parent.site.name` colony, by species (and subcolony if applicable).
-```{r echo=FALSE}
+\newpage  
+Figure 1. Total number of nest at the `r par_colony$parent.site.name` colony, by species (and subcolony if applicable). A filled circle indicates 0 nests and a black space indicates data were not collected.
+```{r echo=FALSE, fig.width=8}
 
 # peak active nests
 
@@ -146,30 +211,36 @@ num_nests <- hep %>%
   group_by(site.name, common.name, year) %>% 
   summarise(total.nests = sum(peakactvnsts)) %>% 
   ungroup() %>% 
-  mutate(common.name = factor(common.name, levels = levels(core4spp))) %>% 
-  filter(total.nests > 0)
+  mutate(common.name = factor(common.name, levels = levels(core4spp)))
 
 
-num_nests %>% 
-  ggplot(group = site.name) +
-  geom_col(aes(x = year, y = total.nests, fill = site.name)) +
+ggplot() +
+  geom_col(data = filter(num_nests, total.nests > 0), aes(x = year, y = total.nests, fill = site.name, color = site.name), position = position_dodge(preserve = "single")) +
+  geom_point(data = filter(num_nests, total.nests == 0), aes(x = year, y = total.nests, fill = site.name, color = site.name), position = position_dodge(preserve = "single")) +
+  geom_point(data = filter(num_nests, total.nests < 0), aes(x = year, y = total.nests, fill = site.name, color = site.name), position = position_dodge(preserve = "single"), shape = 2) +
   #geom_point(aes(x = year, y = total.nests)) +
   #geom_point(data = filter(num_nests, year == zyear), aes(x = year, y = total.nests), color = "red", size = 2) +
   #stat_smooth(aes(x = year, y = total.nests), color = "black", method = "lm", formula = y ~ x + I(x^2), se = FALSE) +
-  scale_x_continuous(breaks = seq(rounded_start_year, rounded_end_year, by = 5), labels = seq(rounded_start_year, rounded_end_year, by = 5)) +
-  facet_wrap(~common.name, scales = "free_y") +
   theme_bw() +
+  scale_x_continuous(breaks = seq(rounded_start_year, rounded_end_year, by = 5), labels = seq(rounded_start_year, rounded_end_year, by = 5), limits = c(rounded_start_year, rounded_end_year)) +
+  scale_fill_brewer(palette = "Set1") +
+  scale_color_brewer(palette = "Set1") +
+  facet_wrap(~common.name, scales = "free_y") +
   ylab("Total nests") +
   xlab("Year") +
-  theme(legend.title = element_blank()) 
+  theme(legend.title = element_blank(),
+        legend.position = "top") 
 
 ```
 \
 \
 
 
-Figure 2. Average number of chicks produced per successful nest at the `r par_colony$parent.site.name` colony, by species (and subcolony if applicable). This value is calculated for nests where brood size close to fledging was confidently counted. Error bar indicated standard error. Lack of error bar indicates only one nest for that species X year combination.
-```{r echo=FALSE}
+
+\newpage  
+
+
+```{r echo=FALSE, fig.width=8}
 
 # number of chicks per nest
 
@@ -214,21 +285,28 @@ ann_dat = data.frame(year = 2023,
                      common.name = "Great Egret",
                      lab = "*") %>% 
   mutate(common.name = factor(common.name, levels = levels(core4spp)))
+```
+  
+Figure 2. Average number of chicks produced per successful nest at the `r par_colony$parent.site.name` colony, by species (and subcolony if applicable). This value is calculated for nests where brood size close to fledging was confidently counted. Error bar indicated standard error. Lack of error bar indicates only one nest for that species X year combination. A blank space indicates data were not available to make this calculation.  
 
 
+```{r}
 chicks_per_nest_se %>% 
   ggplot() +
-  geom_col(aes(x = year, y = chicks.per.nest, fill = site.name)) +
-  geom_errorbar(aes(x = year, y = chicks.per.nest, ymin = chicks.per.nest - st.error, ymax = chicks.per.nest + st.error)) +
+  geom_col(aes(x = year, y = chicks.per.nest, fill = site.name), position = position_dodge(preserve = "single")) +
+  geom_errorbar(aes(x = year, y = chicks.per.nest, ymin = chicks.per.nest - st.error, ymax = chicks.per.nest + st.error), position = position_dodge(preserve = "single")) +
   #geom_text(aes(x = year, y = -0.25, label = stage4.nests), size = 3) +
   #geom_point(aes(x = year, y = chicks.per.nest)) +
   #geom_point(data = filter(chicks_per_nest, year == zyear), aes(x = year, y = chicks.per.nest), color = "red", size = 2) +
   #stat_smooth(aes(x = year, y = chicks.per.nest), method = "lm", formula = y ~ 1, color = "black", se = FALSE) +
+  scale_x_continuous(breaks = seq(rounded_start_year, rounded_end_year, by = 5), labels = seq(rounded_start_year, rounded_end_year, by = 5), limits = c(rounded_start_year, rounded_end_year)) +
+  scale_fill_brewer(palette = "Set1") +
   facet_wrap(~common.name, scales = "free_y") +
   theme_bw() +
   ylab("Chicks/nest") +
   xlab("Year") +
-  theme(legend.title = element_blank()) +
+  theme(legend.title = element_blank(),
+        legend.position = "top") +
   geom_text(data = ann_dat, aes(x = 2023, y = 0.01), label = "*")
 
   
@@ -238,3 +316,23 @@ chicks_per_nest_se %>%
 \
 \
 
+
+Appendix 1. Exact numbers of nests by species and subcolony (if applicable).
+
+```{r}
+num_nests %>% 
+  pivot_wider(id_cols = c(site.name, year), names_from = common.name, values_from = total.nests) %>% 
+  arrange(site.name, year) %>% 
+  group_by(site.name) %>% 
+  mutate(site.name = ifelse(year == min(year), site.name, "")) %>% 
+  ungroup() %>% 
+  mutate(year = as.character(year)) %>% 
+  flextable() %>% 
+  set_header_labels(site.name = "Colony (or subcolony) name",
+                    year = "Year") %>% 
+  align(j = 2:6, align = "center", part = "all") %>% 
+  autofit() %>% 
+  fit_to_width(max_width = 6)
+  
+
+```

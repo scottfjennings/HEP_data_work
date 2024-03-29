@@ -7,7 +7,7 @@ output: word_document
 # user inputs
 
 # specify the year you want a report for
-report_year = 2019
+report_year = 2023
 
 # specify which species you want to include
 filter_spp <- c("BCNH", "GBHE", "GREG", "SNEG", "DCCO")
@@ -42,14 +42,19 @@ library(knitr)
 library(flextable)
 library(officer)
 options(scipen = 999)
-source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
-source("C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
+#source("C:/Users/scott.jennings/Documents/Projects/R_general/utility_functions/bird_utility_functions.R")
+source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
 
 
+hepdata_location = "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # 2 data ----
 
-# all these functions are in HEP_report_utility_functions.R
+# all these functions are in HEP_utility_functions.R
 hep_start <- hep_from_access(hepdata_location)
+hep_sites <- hep_sites_from_access(hepdata_location) 
+
+hep_start <- hep_start %>% 
+  append_as_hepdata()
 
 hep <- hep_start %>% 
   clean_hep() %>% 
@@ -69,7 +74,7 @@ hep_region_child <- hep %>%
   filter(species %in% filter_spp) %>% 
   droplevels()
 
-hep_region <- hep_region_child%>% 
+hep_region <- hep_region_child %>% 
   group_by(parent.site.name, parent.code, year, species) %>% 
   summarise(peakactvnsts = sum(peakactvnsts),
             focalnests = sum(focalnests),
@@ -80,7 +85,8 @@ hep_region <- hep_region_child%>%
             brd3 = sum(brd3),
             brd4 = sum(brd4),
             brd5 = sum(brd5),
-            brd6 = sum(brd6)) %>% 
+            brd6 = sum(brd6)
+            ) %>% 
   ungroup() %>% 
   rename(code = parent.code) %>% 
   mutate_if(is.numeric , replace_na, replace = 0)
@@ -295,9 +301,9 @@ num_colonies_wide <- num_colonies_longer %>%
   mutate(colony.type = sub("(.)", "\\U\\1", colony.type, perl=TRUE)) # capitalize first letter
 
 
-num_colonies_wide %>% 
-  data.frame() %>% 
-  flextable()
+#num_colonies_wide %>% 
+#  data.frame() %>% 
+#  flextable()
 
 #kable(num_colonies_wide)
 flextable(num_colonies_wide) %>% 
@@ -306,7 +312,7 @@ flextable(num_colonies_wide) %>%
   flex_table_merge_spp_cols() %>% 
   add_header_row(values = c("Colony status", rep(c(report_year, "Mean of all previous years (SD)"), length(zspp))), top = FALSE) %>% 
   align_text_col(align = "left", header = TRUE, footer = TRUE) %>% 
-  align_nottext_col(align = "center", header = TRUE, footer = TRUE) %>% 
+  align(j = c(2:ncol(num_colonies_wide)), align = "center", part = "all") %>% 
   border_remove() %>% 
   # horizontal borders
   border(i = 1, border.top = fp_border(color = "black"), part = "header") %>% 
@@ -315,6 +321,7 @@ flextable(num_colonies_wide) %>%
   # vertical borders
   flex_table_vert_borders() %>% 
   padding(padding = 2, part = "all") %>% 
+  autofit() %>% 
   fit_to_width(max_width = 8)
 
 
@@ -336,13 +343,15 @@ colony_visits <- filter(hep_region, year == report_year) %>%
 
 colony_species <- filter(hep_region, year == report_year) %>% 
   filter(peakactvnsts > 0) %>% 
-  bird_taxa_filter(keep_taxa = filter_spp)%>% 
+  filter(species %in% filter_spp) %>% 
+  mutate(common.name = translate_bird_names(species, "alpha.code", "common.name")) %>% 
   group_by(parent.site.name) %>% 
   summarise(species = paste(common.name, collapse = ", "))
 
 colony_visits_species <- full_join(colony_visits, colony_species) %>% 
   rename(Colony = parent.site.name, Species = species) %>% 
-  mutate(Species = ifelse(is.na(Species), paste("Not active", report_year), Species))
+  mutate(Species = ifelse(is.na(Species), paste("Not active", report_year), Species)) %>% 
+  select(Colony, Species, numbervisits)
 
 
 flextable(colony_visits_species) %>% 
@@ -395,8 +404,8 @@ num_nests_wide <- num_nests %>%
 flextable(num_nests_wide) %>% 
   flex_table_spp_header() %>% 
   flex_table_merge_spp_cols() %>% 
-  add_header_row(values = c(rep(c(report_year, "Mean of all previous years (SD)"), length(zspp))), top = FALSE) %>% 
-  align_nottext_col(align = "center", header = TRUE, footer = TRUE) %>% 
+  add_header_row(values = c(rep(c(report_year, "Mean of all\nprevious years (SD)"), length(zspp))), top = FALSE) %>% 
+  align(align = "center", part = "all") %>% 
   border_remove() %>% 
   # horizontal borders
   border(i = 1, border.top = fp_border(color = "black"), part = "header") %>% 
@@ -405,6 +414,7 @@ flextable(num_nests_wide) %>%
   # vertical borders
   flex_table_vert_borders() %>% 
   padding(padding = 2, part = "all") %>% 
+  autofit() %>% 
   fit_to_width(max_width = 8)
 
 
@@ -443,8 +453,8 @@ brood_size <- rbind(brsz_report_yr, brsz_prv_yrs) %>%
 brood_size_all <- expand.grid(species = brood_size$species, year = brood_size$year) %>% 
   distinct() %>% 
   full_join(., brood_size) %>% 
-  mutate(brood.size = gsub("NaN", "-", brood.size),
-         brood.size = ifelse(is.na(brood.size), "-", brood.size))
+  mutate(across(contains("brood.size"), ~str_replace("NaN", "-", brood.size)),
+         across(contains("brood.size"), ~ifelse(is.na(.), "-", .)))
 
 
 brood_size_wide <- brood_size %>% 
@@ -457,9 +467,8 @@ brood_size_wide <- brood_size %>%
 flextable(brood_size_wide) %>% 
   flex_table_spp_header() %>% 
   flex_table_merge_spp_cols() %>% 
-  add_header_row(values = c(rep(c(report_year, "Mean of all previous years (SD)"), length(.$body$col_keys)/2)), top = FALSE) %>% 
-  align_text_col(align = "left", header = TRUE, footer = TRUE) %>% 
-  align_nottext_col(align = "center", header = TRUE, footer = TRUE) %>% 
+  add_header_row(values = c(rep(c(paste(report_year, "(SD)"), "Mean of all\nprevious years (SD)"), length(.$body$col_keys)/2)), top = FALSE) %>% 
+  align(align = "center", part = "all") %>% 
   border_remove() %>% 
   # horizontal borders
   border(i = 1, border.top = fp_border(color = "black"), part = "header") %>% 
@@ -468,6 +477,7 @@ flextable(brood_size_wide) %>%
   # vertical borders
   flex_table_vert_borders() %>%  
   padding(padding = 2, part = "all") %>% 
+  autofit() %>% 
   fit_to_width(max_width = 8)
 
 ```
