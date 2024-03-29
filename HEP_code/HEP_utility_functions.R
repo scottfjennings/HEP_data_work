@@ -74,7 +74,9 @@ core4spp_colors <- c(brewer.pal(8, "Dark2")[4], brewer.pal(8, "Dark2")[3], brewe
 #hepdata_location = "V:/HEP_data/HEPDATA.accdb" # this is the path for Azure via remote desktop
 # hepdata_location = "C:/Users/scott.jennings/Documents/Projects/HEP/HEP_data_work/HEP_data/HEPDATA.accdb"
 # data reading ----
-#' Title
+#' hep_from_access
+#' 
+#' read tbl_HEPDATA from the Access db
 #'
 #' @param hepdata_location 
 #'
@@ -129,6 +131,38 @@ out_table <- out_table  # %>%
   #       site.name = as.character(site.name),
   #       parent.site.name = as.character(parent.site.name))
 return(out_table)
+}
+
+
+#' hep_from_access
+#' 
+#' read tbl_HEPDATA from the Access db
+#'
+#' @param hepdata_location 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' hep <- hep_from_access(hepdata_location)
+hep_tbl_from_access <- function(hepdata_location = hepdata_location, ztbl){
+  if(is.na(hepdata_location)){
+    print("Please assign location of HEPDATA access file to hepdata_location")
+  } else {
+    db <- hepdata_location
+  }
+  
+  con2 <- odbcConnectAccess2007(db)
+  
+  out_table <- sqlFetch(con2, ztbl) 
+  
+  close(con2)
+  
+  out_table <- out_table %>% 
+    mutate(across(everything(), ~as.character(.)))
+  
+  
+  return(out_table)
 }
 
 
